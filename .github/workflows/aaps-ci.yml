@@ -6,25 +6,36 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
+      - name: Set up JDK 17 (more stable for AAPS)
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Grant execute permission
-        run: chmod +x gradlew
+        run: chmod +x ./gradlew
 
-      - name: Build APK
-        run: ./gradlew assembleDebug
+      # 🔥 KEY FIX: limit memory + workers
+      - name: Build AAPS (optimized)
+        run: |
+          ./gradlew :app:assembleFullDebug \
+          --no-daemon \
+          --stacktrace \
+          --max-workers=2 \
+          -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=1g"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AAPS-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/full/debug/*.apk

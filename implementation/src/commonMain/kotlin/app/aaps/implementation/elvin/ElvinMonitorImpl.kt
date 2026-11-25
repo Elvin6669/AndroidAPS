@@ -62,6 +62,9 @@ class ElvinMonitorImpl(
     }
 
     private fun int(key: ElvinIntKey) = preferences.get(key).coerceIn(key.min, key.max)
+    private inline fun <T> diagnosticRead(block: () -> T): T? = try { block() }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { null }
     private fun id(channel: ElvinChannel) = if (channel == ElvinChannel.PUMP) NotificationId.ELVIN_PUMP_LOSS else NotificationId.ELVIN_CGM_LOSS
     private fun sound(channel: ElvinChannel): AlarmSound = listOf(AlarmSound.ALARM, AlarmSound.URGENT_ALARM, AlarmSound.ERROR, AlarmSound.BOLUS_ERROR)[
         int(if (channel == ElvinChannel.PUMP) ElvinIntKey.PumpSound else ElvinIntKey.CgmSound)]
@@ -83,11 +86,12 @@ class ElvinMonitorImpl(
     private suspend fun evaluate() {
         val now = date.now()
         val enabled = preferences.get(ElvinBooleanKey.Enabled) && platform.supported && config.APS
-        val pump = if (enabled) activePlugin().activePump else null
+        // An unselected/unavailable pump must not prevent independent CGM monitoring.
+        val pump = if (enabled) diagnosticRead { activePlugin().activePump } else null
         // The concentration wrapper implements Pump's default context. Read the selected driver's
         // diagnostic getter explicitly; do not alter the concentration/delivery wrapper.
-        val pumpContext = pump?.selectedActivePump()?.elvinCommunicationContext
-        val disconnected = enabled && loop().runningMode() == RM.Mode.DISCONNECTED_PUMP
+        val pumpContext = diagnosticRead { pump?.selectedActivePump()?.elvinCommunicationContext }
+        val disconnected = enabled && pump != null && loop().runningMode() == RM.Mode.DISCONNECTED_PUMP
         val lastPump = pump?.lastDataTime?.value?.takeIf { it > 0 }
         val lastCgm = if (enabled) persistence.getLastGlucoseValue()?.timestamp else null
         val status = platform.status()

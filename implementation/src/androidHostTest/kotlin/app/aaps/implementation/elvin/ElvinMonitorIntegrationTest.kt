@@ -133,4 +133,12 @@ class ElvinMonitorIntegrationTest {
         verify(f.pump).selectedActivePump()
         verify(f.notifications, never()).dismiss(NotificationId.PUMP_UNREACHABLE)
     }
+    @Test fun `CGM monitor remains independent when no pump is selected`() = runTest {
+        val f = Fixture(); f.setup()
+        whenever(f.active.activePump).thenThrow(IllegalStateException("No pump selected"))
+        val monitor = f.monitor(); monitor.tick()
+        f.now += 600_000; monitor.tick()
+        assertEquals(listOf(ElvinChannel.CGM), f.platform.played)
+        verifyNoInteractions(f.loop)
+    }
 }

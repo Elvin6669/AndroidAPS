@@ -21,6 +21,9 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.*
 
 class ElvinMaintenanceImplTest {
+    private fun posted(f: Fixture, id: NotificationId) = org.mockito.Mockito.mockingDetails(f.notices).invocations.count {
+        it.method.name == "post" && it.arguments.firstOrNull() == id
+    }
     @Test fun `stalled V3 queue warns and intentional pause clears only custom warning`() = runTest {
         val f = Fixture(); f.setup()
         f.prefs.put(ElvinBooleanKey.AutoBackup, false)
@@ -30,9 +33,9 @@ class ElvinMaintenanceImplTest {
         whenever(f.repo.urlUpdate).thenReturn(MutableStateFlow("https://test.invalid"))
         val m = ElvinMaintenanceImpl(f.prefs, f.config, f.date, f.persistence, { f.exporter }, { f.password }, { f.automation }, { f.repo }, f.notices, f.platform, backgroundScope)
         m.onSample(true); m.awaitIdle()
-        verify(f.notices, never()).post(eq(NotificationId.ELVIN_NIGHTSCOUT_STALLED), any())
+        assertEquals(0, posted(f, NotificationId.ELVIN_NIGHTSCOUT_STALLED))
         f.now += 30 * 60_000L; m.onSample(true); m.awaitIdle()
-        verify(f.notices).post(eq(NotificationId.ELVIN_NIGHTSCOUT_STALLED), any())
+        assertEquals(1, posted(f, NotificationId.ELVIN_NIGHTSCOUT_STALLED))
         assertFalse(m.status.value.contains("test.invalid"))
         whenever(f.repo.uploadsPaused()).thenReturn(true)
         m.onSample(true); m.awaitIdle()
@@ -111,7 +114,7 @@ class ElvinMaintenanceImplTest {
         m.backupNow(); m.awaitIdle()
         assertTrue(m.status.value.contains("cloud=false"))
         assertEquals(f.now, f.prefs.get(ElvinMaintenanceLongKey.LastBackup))
-        verify(f.notices).post(eq(NotificationId.ELVIN_BACKUP_STATUS), any())
+        assertEquals(1, posted(f, NotificationId.ELVIN_BACKUP_STATUS))
     }
     @Test fun `existing export Automation takes precedence while manual backup remains available`() = runTest {
         val f = Fixture(); f.setup()

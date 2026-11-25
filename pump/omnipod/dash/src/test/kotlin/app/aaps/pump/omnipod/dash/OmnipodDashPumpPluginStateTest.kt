@@ -43,6 +43,15 @@ import org.mockito.kotlin.whenever
  */
 class OmnipodDashPumpPluginStateTest {
 
+    @Test
+    fun `Elvin terminal diagnostics never connect to or command the pod`() {
+        whenever(podStateManager.isPodKaput).thenReturn(true)
+        assertThat(sut.elvinCommunicationContext.terminal).isTrue()
+        whenever(podStateManager.isPodKaput).thenReturn(false)
+        assertThat(sut.elvinCommunicationContext.terminal).isFalse()
+        org.mockito.kotlin.verifyNoInteractions(omnipodManager)
+    }
+
     private lateinit var podStateManager: OmnipodDashPodStateManager
     private lateinit var omnipodManager: OmnipodDashManager
     private lateinit var sut: OmnipodDashPumpPlugin

@@ -61,7 +61,7 @@ jobs:
             if ./gradlew :implementation:testAndroidHostTest :core:keys:testAndroidHostTest \
               :plugins:constraints:testAndroidHostTest :plugins:automation:testAndroidHostTest \
               :plugins:sync:testAndroidHostTest :ui:compileAndroidMain \
-              :pump:omnipod:dash:compileDebugKotlin :app:compileFullDebugKotlin -PfirebaseDisable \
+              :pump:omnipod:dash:testDebugUnitTest :app:compileFullDebugKotlin -PfirebaseDisable \
               --no-daemon --continue --max-workers=3 \
               -Dorg.gradle.jvmargs='-Xmx3g -Xss4m' -Pkotlin.daemon.jvmargs=-Xmx4g \
               2>&1 | tee android-validation.log; then
@@ -84,3 +84,4 @@ jobs:
             plugins/constraints/build/test-results
             plugins/automation/build/test-results
             plugins/sync/build/test-results
+            pump/omnipod/dash/build/test-results

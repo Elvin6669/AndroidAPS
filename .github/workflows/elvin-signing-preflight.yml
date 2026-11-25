@@ -1,0 +1,94 @@
+name: Elvin signing and Drive preflight (no APK)
+on:
+  push:
+    branches: [custom-aaps]
+    paths: [.github/workflows/elvin-signing-preflight.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Read existing signing configuration securely
+        env:
+          STORED_SET: ${{ secrets.KEYSTORE_SET }}
+          STORED_KEY: ${{ secrets.KEYSTORE_BASE64 }}
+          STORED_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          STORED_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORED_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: python
+        run: |
+          import os,base64,secrets,pathlib
+          env=os.environ
+          try:
+              if env.get('STORED_SET'):
+                  parts=base64.b64decode(env['STORED_SET'],validate=True).decode().split('|')
+                  if len(parts)!=4: raise ValueError()
+              else:
+                  parts=[env.get(k,'') for k in ['STORED_KEY','STORED_PASSWORD','STORED_ALIAS','STORED_KEY_PASSWORD']]
+              if not all(parts): raise ValueError()
+              key=base64.b64decode(parts[0],validate=True)
+              dest=pathlib.Path(env['RUNNER_TEMP'])/'elvin-signing.jks'
+              fd=os.open(dest,os.O_CREAT|os.O_WRONLY|os.O_TRUNC,0o600)
+              with os.fdopen(fd,'wb') as f: f.write(key)
+              with open(env['GITHUB_ENV'],'a') as f:
+                  for name,value in zip(['ELVIN_STORE_PASSWORD','ELVIN_ALIAS','ELVIN_KEY_PASSWORD'],parts[1:]):
+                      masked=value.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                      print('::add-mask::'+masked)
+                      delimiter=secrets.token_hex(24)
+                      f.write(f'{name}<<{delimiter}\n{value}\n{delimiter}\n')
+          except Exception:
+              raise SystemExit('Existing signing configuration could not be decoded. Values withheld; no key was changed.')
+      - name: Verify signing key using a disposable JAR and report public certificate
+        run: |
+          umask 077
+          printf 'Elvin signing preflight\n' > "$RUNNER_TEMP/elvin-probe.txt"
+          jar --create --file "$RUNNER_TEMP/elvin-probe.jar" -C "$RUNNER_TEMP" elvin-probe.txt
+          if ! jarsigner -keystore "$RUNNER_TEMP/elvin-signing.jks" -storepass:env ELVIN_STORE_PASSWORD -keypass:env ELVIN_KEY_PASSWORD "$RUNNER_TEMP/elvin-probe.jar" "$ELVIN_ALIAS" > "$RUNNER_TEMP/elvin-private.log" 2>&1; then
+            echo 'Existing signing key validation failed. Private log withheld; key unchanged.'
+            exit 1
+          fi
+          jarsigner -verify "$RUNNER_TEMP/elvin-probe.jar" > /dev/null
+          keytool -exportcert -keystore "$RUNNER_TEMP/elvin-signing.jks" -storepass:env ELVIN_STORE_PASSWORD -alias "$ELVIN_ALIAS" -file "$RUNNER_TEMP/elvin-public.der" > /dev/null 2>&1
+          echo 'Existing keystore and private-key password: VALID' > preflight-report.txt
+          openssl x509 -inform DER -in "$RUNNER_TEMP/elvin-public.der" -noout -fingerprint -sha256 -dates >> preflight-report.txt
+          if openssl x509 -inform DER -in "$RUNNER_TEMP/elvin-public.der" -noout -subject | grep -qE 'CN\s*=\s*Android Debug'; then
+            echo 'Certificate has Android Debug subject: YES (stored key was not regenerated)' >> preflight-report.txt
+          else
+            echo 'Certificate has Android Debug subject: NO' >> preflight-report.txt
+          fi
+          if openssl x509 -inform DER -in "$RUNNER_TEMP/elvin-public.der" -checkend 0 -noout > /dev/null; then
+            echo 'Certificate currently unexpired: YES' >> preflight-report.txt
+          else
+            echo 'Certificate currently unexpired: NO; requires review, key unchanged' >> preflight-report.txt
+          fi
+      - name: Verify existing Google Drive credentials with a read-only request
+        env:
+          STORED_DRIVE: ${{ secrets.GDRIVE_OAUTH2 }}
+        shell: python
+        run: |
+          import os,base64,json,urllib.request,urllib.parse
+          try:
+              client,refresh=base64.b64decode(os.environ['STORED_DRIVE'],validate=True).decode().split('|')
+              body=urllib.parse.urlencode(dict(client_id=client,refresh_token=refresh,grant_type='refresh_token')).encode()
+              with urllib.request.urlopen('https://oauth2.googleapis.com/token',data=body,timeout=30) as r: token=json.load(r)['access_token']
+              request=urllib.request.Request('https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)',headers={'Authorization':'Bearer '+token})
+              with urllib.request.urlopen(request,timeout=30) as r: json.load(r)
+              with open('preflight-report.txt','a') as f: f.write('Existing Drive OAuth refresh and read-only API access: VALID\n')
+          except Exception:
+              with open('preflight-report.txt','a') as f: f.write('Existing Drive OAuth/API validation: FAILED; credentials unchanged, response withheld\n')
+              raise SystemExit('Drive validation failed. Credentials and response contents withheld.')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: elvin-public-signing-preflight
+          path: preflight-report.txt
+      - name: Remove private temporary material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/elvin-signing.jks" "$RUNNER_TEMP/elvin-probe.jar" "$RUNNER_TEMP/elvin-probe.txt" "$RUNNER_TEMP/elvin-private.log" "$RUNNER_TEMP/elvin-public.der"

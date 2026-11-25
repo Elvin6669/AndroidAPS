@@ -114,9 +114,10 @@ class ElvinMonitorImpl(
         val pumpContext = diagnosticRead { pump?.selectedActivePump()?.elvinCommunicationContext }
         val mode = if (sample && pump != null) diagnosticRead { loop().runningMode() } else null
         val disconnected = mode == RM.Mode.DISCONNECTED_PUMP
-        val lastPump = diagnosticRead { pump?.lastDataTime?.value }?.takeIf { it > 0 }
+        val pumpTime = diagnosticRead { pump?.lastDataTime?.value }
+        val lastPump = pumpTime?.takeIf { it > 0 }
         val suspended = diagnosticRead { pump?.isSuspended() }
-        val configured = diagnosticRead { pump?.isConfigured() } == true
+        val configured = diagnosticRead { pump?.isConfigured() }
         var cgmAvailable = true
         val lastCgm = if (sample) try { persistence.getLastGlucoseValue()?.timestamp }
             catch (e: CancellationException) { throw e }
@@ -136,12 +137,12 @@ class ElvinMonitorImpl(
                     int(if (pumpChannel) ElvinIntKey.PumpRepeat else ElvinIntKey.CgmRepeat))
                 val decision = Policy.evaluate(policy, states[channel] ?: Policy.State(), Policy.Observation(now, last,
                     intentionalDisconnect = pumpChannel && disconnected,
-                    configured = !pumpChannel || configured,
+                    configured = !pumpChannel || configured == true,
                     suspended = pumpChannel && suspended == true,
                     terminalPodState = pumpChannel && pumpContext?.terminal == true,
                     failedAttemptConfirmed = if (pumpChannel) ElvinTelemetry.pump.value.let {
                         it.consecutiveFailures > 0 && it.lastAttempt > (lastPump ?: 0L)
-                    } else null, inputsAvailable = if (pumpChannel) pump == null || mode != null else cgmAvailable))
+                    } else null, inputsAvailable = if (pumpChannel) pump == null || (mode != null && configured != null && pumpTime != null) else cgmAvailable))
                 states[channel] = decision.state
                 summary.add("$channel: last successful timestamp=${last ?: "none"}; age(ms)=${last?.let { now - it } ?: "unknown"}; ${decision.reason}")
                 when (decision.event) {
@@ -229,7 +230,7 @@ class ElvinMonitorImpl(
         preferences.remove(ElvinRuntimeKey.State)
         ElvinUpdateLongKey.entries.forEach(preferences::remove)
         ElvinMaintenanceLongKey.entries.forEach(preferences::remove)
-        states.clear(); events.clear(); lastTick = 0L
+        states.clear(); events.clear(); lastTick = 0L; previouslyEnabled = false
         maintenance?.reset()
         ElvinChannel.entries.forEach { platform.dismiss(it); notifications.dismiss(id(it)) }
         output.value = "Elvin settings reset. Custom monitoring is disabled. Standard AAPS settings were not changed."

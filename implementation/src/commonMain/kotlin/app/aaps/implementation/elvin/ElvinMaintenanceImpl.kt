@@ -46,7 +46,7 @@ class ElvinMaintenanceImpl(
     private fun enabled() = preferences.get(ElvinBooleanKey.Enabled) && config.APS && config.platform == AppPlatform.Android
     private fun number(key: ElvinIntKey) = preferences.get(key).coerceIn(key.min, key.max)
     private fun put(key: ElvinMaintenanceLongKey, value: Long) {
-        if (preferences.get(key) != value) preferences.put(key, value)
+        if (enabled() && preferences.get(key) != value) preferences.put(key, value)
     }
     private fun render() {
         if (!enabled()) { output.value = "Elvin maintenance disabled; existing AAPS sync and Automation remain unchanged"; return }
@@ -162,6 +162,7 @@ class ElvinMaintenanceImpl(
         }
     }
     private fun failedBackup(message: String) {
+        if (!enabled()) return
         backupStatus = message
         notifications.post(NotificationId.ELVIN_BACKUP_STATUS, TextRef.Literal(message))
         platform.notice(ElvinPlatform.Notice.BACKUP, message)

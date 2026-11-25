@@ -10,6 +10,7 @@ import app.aaps.core.interfaces.nsclient.NSClientRepository
 import app.aaps.core.interfaces.protection.ExportPasswordDataStore
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.keys.elvin.*
+import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.interfaces.AppPlatform
 import app.aaps.implementation.maintenance.migration.FileKeyValueStore
 import app.aaps.implementation.sharedPreferences.PreferencesImpl
@@ -20,6 +21,38 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.*
 
 class ElvinMaintenanceImplTest {
+    @Test fun `stalled V3 queue warns and intentional pause clears only custom warning`() = runTest {
+        val f = Fixture(); f.setup()
+        f.prefs.put(ElvinBooleanKey.AutoBackup, false)
+        f.prefs.put(ElvinBooleanKey.NightscoutMonitoring, true)
+        f.prefs.put(BooleanKey.NsClientUploadData, true)
+        whenever(f.repo.queueSize).thenReturn(MutableStateFlow(2L))
+        whenever(f.repo.urlUpdate).thenReturn(MutableStateFlow("https://test.invalid"))
+        val m = ElvinMaintenanceImpl(f.prefs, f.config, f.date, f.persistence, { f.exporter }, { f.password }, { f.automation }, { f.repo }, f.notices, f.platform, backgroundScope)
+        m.onSample(true); m.awaitIdle()
+        verify(f.notices, never()).post(eq(NotificationId.ELVIN_NIGHTSCOUT_STALLED), any())
+        f.now += 30 * 60_000L; m.onSample(true); m.awaitIdle()
+        verify(f.notices).post(eq(NotificationId.ELVIN_NIGHTSCOUT_STALLED), any())
+        assertFalse(m.status.value.contains("test.invalid"))
+        whenever(f.repo.uploadsPaused()).thenReturn(true)
+        m.onSample(true); m.awaitIdle()
+        assertTrue(m.status.value.contains("intentionally paused"))
+        assertEquals(0L, f.prefs.get(ElvinMaintenanceLongKey.NsPendingSince))
+        verify(f.notices).dismiss(NotificationId.ELVIN_NIGHTSCOUT_STALLED)
+        verifyNoInteractions(f.exporter, f.password)
+    }
+    @Test fun `profile history is read only and uses configured window`() = runTest {
+        val f = Fixture(); f.setup()
+        whenever(f.persistence.getProfileSwitchesIncludingInvalidFromTime(any(), eq(false))).thenReturn(emptyList())
+        whenever(f.persistence.getEffectiveProfileSwitchesIncludingInvalidFromTime(any(), eq(false))).thenReturn(emptyList())
+        f.prefs.put(ElvinIntKey.ProfileHistoryDays, 7)
+        val m = ElvinMaintenanceImpl(f.prefs, f.config, f.date, f.persistence, { f.exporter }, { f.password }, { f.automation }, { f.repo }, f.notices, f.platform, backgroundScope)
+        assertTrue(m.profiles().contains("7 days"))
+        verify(f.persistence).getProfileSwitchesIncludingInvalidFromTime(f.now - 7 * 86_400_000L, false)
+        verify(f.persistence).getEffectiveProfileSwitchesIncludingInvalidFromTime(f.now - 7 * 86_400_000L, false)
+        verifyNoMoreInteractions(f.persistence)
+        verifyNoInteractions(f.exporter, f.password, f.repo)
+    }
     private class Fixture {
         var now = 10_000_000L
         val config = mock<Config>().also {

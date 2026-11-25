@@ -5,10 +5,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 enum class ElvinChannel { PUMP, CGM }
+enum class ElvinSampleSource { PERIODIC, MANUAL }
 
 interface ElvinMonitor {
     val diagnostics: StateFlow<String>
-    suspend fun tick()
+    suspend fun tick(source: ElvinSampleSource = ElvinSampleSource.PERIODIC)
     fun snooze(channel: ElvinChannel)
     fun test(channel: ElvinChannel)
     fun stopTest()

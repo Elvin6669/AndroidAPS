@@ -10,6 +10,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.aaps.core.interfaces.elvin.ElvinChannel
 import app.aaps.core.interfaces.elvin.ElvinMonitor
+import app.aaps.core.interfaces.elvin.ElvinSampleSource
 import app.aaps.core.keys.LongComposedKey
 import app.aaps.core.keys.elvin.*
 import app.aaps.core.ui.compose.AapsTopAppBar
@@ -42,7 +43,7 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                 }
                 if (diagnosticsPage) {
                     item {
-                        TextButton(onClick = { scope.launch { monitor.tick() } }) { Text("Refresh diagnostics") }
+                        TextButton(onClick = { scope.launch { monitor.tick(ElvinSampleSource.MANUAL) } }) { Text("Refresh diagnostics") }
                         TextButton(onClick = monitor::exportDiagnostics) { Text("Export diagnostic log (no credentials)") }
                         Text(diagnosticText)
                     }
@@ -51,7 +52,7 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                     }
                 } else {
                     item {
-                        TextButton(onClick = { diagnosticsPage = true; scope.launch { monitor.tick() } }) { Text("Connection diagnostics and alarm history") }
+                        TextButton(onClick = { diagnosticsPage = true; scope.launch { monitor.tick(ElvinSampleSource.MANUAL) } }) { Text("Connection diagnostics and alarm history") }
                     }
                     ElvinBooleanKey.entries.forEach { setting ->
                         item(key = setting.key) {
@@ -60,7 +61,7 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                                 Text(setting.title.text, Modifier.weight(1f))
                                 Switch(checked = checked, onCheckedChange = {
                                     preferences.put(setting, it)
-                                    scope.launch { monitor.tick() }
+                                    scope.launch { monitor.tick(ElvinSampleSource.MANUAL) }
                                 })
                             }
                         }

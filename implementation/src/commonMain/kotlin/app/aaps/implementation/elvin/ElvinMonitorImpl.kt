@@ -73,9 +73,9 @@ class ElvinMonitorImpl(
         while (events.size > 100) events.removeFirst()
     }
 
-    override suspend fun tick() {
+    override suspend fun tick(source: ElvinSampleSource) {
         // This hook must never prevent the existing AAPS alarm/maintenance path from running.
-        try { tickMutex.withLock { evaluate() } }
+        try { tickMutex.withLock { evaluate(source) } }
         catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             ElvinChannel.entries.forEach { runCatching { platform.stop(it) } }
@@ -83,7 +83,7 @@ class ElvinMonitorImpl(
         }
     }
 
-    private suspend fun evaluate() {
+    private suspend fun evaluate(source: ElvinSampleSource) {
         val now = date.now()
         val enabled = preferences.get(ElvinBooleanKey.Enabled) && platform.supported && config.APS
         // An unselected/unavailable pump must not prevent independent CGM monitoring.
@@ -98,9 +98,9 @@ class ElvinMonitorImpl(
         stateLock.withLock {
             // A reset/disable may have happened while persistence or running-mode lookup suspended.
             val enabledNow = enabled && preferences.get(ElvinBooleanKey.Enabled)
-            val summary = mutableListOf("Elvin 4.0.0-EI.1; enabled=$enabled", "Worker sample: $now; previous=$lastTick; gap(ms)=${if (lastTick > 0) now - lastTick else 0}")
-            if (enabled) record("Background monitor sample")
-            lastTick = now
+            val summary = mutableListOf("Elvin 4.0.0-EI.1; enabled=$enabled", "Monitor sample: $now; source=$source; last periodic sample=$lastTick; periodic gap(ms)=${if (lastTick > 0) now - lastTick else 0}")
+            if (enabled) record("$source monitor sample")
+            if (source == ElvinSampleSource.PERIODIC) lastTick = now
             ElvinChannel.entries.forEach { channel ->
                 val pumpChannel = channel == ElvinChannel.PUMP
                 val last = if (pumpChannel) lastPump else lastCgm

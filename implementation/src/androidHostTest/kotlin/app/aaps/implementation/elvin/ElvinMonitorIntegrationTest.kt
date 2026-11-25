@@ -141,4 +141,14 @@ class ElvinMonitorIntegrationTest {
         assertEquals(listOf(ElvinChannel.CGM), f.platform.played)
         verifyNoInteractions(f.loop)
     }
+    @Test fun `manual diagnostics do not claim a background worker executed`() = runTest {
+        val f = Fixture(); f.setup()
+        val monitor = f.monitor()
+        monitor.tick(ElvinSampleSource.MANUAL)
+        assertTrue(monitor.diagnostics.value.contains("source=MANUAL; last periodic sample=0"))
+        monitor.tick(ElvinSampleSource.PERIODIC)
+        f.now += 60_000
+        monitor.tick(ElvinSampleSource.MANUAL)
+        assertTrue(monitor.diagnostics.value.contains("last periodic sample=1000000"))
+    }
 }

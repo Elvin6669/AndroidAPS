@@ -48,6 +48,8 @@ class AutomationEventObject(private val factory: AutomationEventFactory) : Autom
 
     var trigger: TriggerConnector = TriggerConnector(triggerDeps)
     val actions: MutableList<Action> = ArrayList()
+    override val containsSettingsExport: Boolean
+        get() = actions.toList().any { it is app.aaps.plugins.automation.actions.ActionSettingsExport }
 
     var lastRun: Long = 0
 

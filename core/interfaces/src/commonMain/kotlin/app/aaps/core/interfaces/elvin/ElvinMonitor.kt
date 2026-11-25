@@ -9,6 +9,8 @@ enum class ElvinSampleSource { PERIODIC, MANUAL }
 
 interface ElvinMonitor {
     val diagnostics: StateFlow<String>
+    val profileHistory: StateFlow<String>
+    val maintenanceStatus: StateFlow<String>
     suspend fun tick(source: ElvinSampleSource = ElvinSampleSource.PERIODIC)
     fun snooze(channel: ElvinChannel)
     fun test(channel: ElvinChannel)
@@ -17,6 +19,16 @@ interface ElvinMonitor {
     fun snoozeRoutineUpdate()
     fun exportDiagnostics()
     fun openPermissionSettings(kind: String)
+    suspend fun refreshProfiles()
+    fun backupNow()
+}
+
+interface ElvinMaintenance {
+    val status: StateFlow<String>
+    fun onSample(periodic: Boolean)
+    fun backupNow()
+    fun reset()
+    suspend fun profiles(): String
 }
 
 /** Read-only status supplied by a driver. No pump operations are added to the monitor. */

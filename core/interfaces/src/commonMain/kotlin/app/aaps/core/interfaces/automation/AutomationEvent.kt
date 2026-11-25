@@ -16,6 +16,8 @@ interface AutomationEvent {
 
     /** True when this event is exposed as a user-tappable action (Overview button / wear tile / quick-launch). */
     var userAction: Boolean
+    /** Read-only scheduling metadata; lets another backup adapter avoid duplicate exports. */
+    val containsSettingsExport: Boolean get() = false
     suspend fun canRun(): Boolean
     suspend fun preconditionCanRun(): Boolean
     fun firstActionIcon(): AutomationIconData?

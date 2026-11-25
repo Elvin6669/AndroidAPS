@@ -5,6 +5,43 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class CommunicationAlarmPolicyTest {
+    @Test fun `silent and DND routing uses independent options and policy access`() {
+        for (silent in listOf(false, true)) for (dndOverride in listOf(false, true)) for (access in listOf(false, true)) {
+            assertEquals(if (silent) P.AudioRoute.ALARM else P.AudioRoute.NOTIFICATION,
+                P.audioRoute(false, silent, dndOverride, access))
+            assertEquals(if (dndOverride && access) P.AudioRoute.ALARM else P.AudioRoute.QUIET,
+                P.audioRoute(true, silent, dndOverride, access))
+        }
+    }
+    @Test fun `unavailable input preserves an existing warning rather than inventing recovery`() {
+        val state = P.State(active = true, watchStarted = 1, lastAlarm = 100)
+        val result = P.evaluate(P.Settings(true, 10, 5), state, P.Observation(1_000_000, null, inputsAvailable = false))
+        assertEquals(P.Event.NONE, result.event)
+        assertEquals(state, result.state)
+    }
+    @Test fun `Nightscout health respects configuration pause progress repeat and recovery`() {
+        fun decision(now: Long, pending: Long = 1_000_000, success: Long = 0, warning: Long = 0,
+                     paused: Boolean = false, configured: Boolean = true, uploads: Boolean = true, queue: Long = 5, failures: Long = 0) =
+            ElvinMaintenancePolicy.upload(now, true, configured, uploads, queue, 1_000_000, success, failures, pending, warning, 10, 5, paused)
+        assertFalse(decision(1_540_000).warn)
+        assertTrue(decision(1_600_000).warn)
+        assertFalse(decision(1_660_000, warning = 1_600_000).warn)
+        assertTrue(decision(1_900_000, warning = 1_600_000).warn)
+        assertFalse(decision(1_600_000, success = 1_500_000).warn)
+        assertFalse(decision(1_600_000, paused = true).warn)
+        assertFalse(decision(1_600_000, configured = false).warn)
+        assertFalse(decision(1_600_000, uploads = false).warn)
+        assertEquals(0L, decision(1_600_000, queue = 0).pendingSince)
+        assertTrue(decision(1_600_000, queue = 0, failures = 2).warn)
+    }
+    @Test fun `encrypted backup interval has bounded retry backoff and tolerates clock rollback`() {
+        assertTrue(ElvinMaintenancePolicy.backupDue(1_000_000, 0, 0, 24))
+        assertFalse(ElvinMaintenancePolicy.backupDue(1_000_001, 0, 1_000_000, 24))
+        assertTrue(ElvinMaintenancePolicy.backupDue(1_900_000, 0, 1_000_000, 24))
+        assertFalse(ElvinMaintenancePolicy.backupDue(5_000_000, 1_000_000, 1_000_000, 24))
+        assertTrue(ElvinMaintenancePolicy.backupDue(87_400_000, 1_000_000, 1_000_000, 24))
+        assertTrue(ElvinMaintenancePolicy.backupDue(900_000, 1_000_000, 1_000_000, 24))
+    }
     private val start = 1_000_000L
     private fun observation(minutes: Int, success: Long? = start, disconnected: Boolean = false, suspended: Boolean = false, terminal: Boolean = false) =
         P.Observation(start + minutes * 60_000L, success, intentionalDisconnect = disconnected, suspended = suspended, terminalPodState = terminal)

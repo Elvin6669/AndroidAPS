@@ -132,6 +132,24 @@ open class EncryptedPrefsFormatTest : TestBase() {
         assertThat(prefsOut.metadata[PrefsMetadataKeyImpl.ENCRYPTION]!!.status).isEqualTo(PrefsStatusImpl.OK)
     }
 
+    @Test fun `all Elvin settings survive the existing encrypted export format`() {
+        val values = app.aaps.core.keys.elvin.ElvinKeys.settings.associate { key -> key.key to when (key) {
+            is app.aaps.core.keys.interfaces.BooleanNonPreferenceKey -> key.defaultValue.toString()
+            is app.aaps.core.keys.interfaces.IntNonPreferenceKey -> key.defaultValue.toString()
+            else -> error("Unexpected Elvin settings type")
+        } }.toMutableMap()
+        values[app.aaps.core.keys.elvin.ElvinBooleanKey.PumpDndOverride.key] = "true"
+        values[app.aaps.core.keys.elvin.ElvinIntKey.CgmTimeout.key] = "17"
+        val storage = SingleStringStorage("")
+        val format = EncryptedPrefsFormat(rh, storage, context, rxBus, SecureEncryptImpl(aapsLogger, cryptoUtil))
+        val input = Prefs(values, mapOf(PrefsMetadataKeyImpl.ENCRYPTION to PrefMetadata(PrefsFormat.FORMAT_KEY_ENC, PrefsStatusImpl.OK)))
+        format.savePreferences(getMockedFile(), input, "test-only-export-password")
+        val output = format.loadPreferences(storage.contents, "test-only-export-password")
+        assertThat(output.values).containsExactlyEntriesIn(values)
+        assertThat(storage.contents).doesNotContain("elvin_pump_dnd")
+        assertThat(output.metadata[PrefsMetadataKeyImpl.ENCRYPTION]!!.status).isEqualTo(PrefsStatusImpl.OK)
+    }
+
     @Test
     fun wrongPasswordTest() {
         val frozenPrefs = "{\n" +

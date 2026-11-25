@@ -12,6 +12,20 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
 class ElvinSettingsPersistenceTest {
+    @Test fun `independent audio profiles inherit legacy settings but explicit channel settings win`() {
+        val prefs = preferences(FileKeyValueStore())
+        prefs.put(ElvinBooleanKey.SilentOverride, true)
+        prefs.put(ElvinIntKey.StartVolume, 45)
+        assertTrue(ElvinAudioSettings.read(prefs, true).silentOverride)
+        assertTrue(ElvinAudioSettings.read(prefs, false).silentOverride)
+        prefs.put(ElvinBooleanKey.PumpSilentOverride, false)
+        prefs.put(ElvinIntKey.PumpStartVolume, 20)
+        assertFalse(ElvinAudioSettings.read(prefs, true).silentOverride)
+        assertTrue(ElvinAudioSettings.read(prefs, false).silentOverride)
+        assertEquals(20, ElvinAudioSettings.read(prefs, true).start)
+        assertEquals(45, ElvinAudioSettings.read(prefs, false).start)
+        assertFalse(ElvinAudioSettings.boolean(prefs, ElvinBooleanKey.PumpSilentOverride))
+    }
     private fun preferences(store: FileKeyValueStore): PreferencesImpl {
         val config = mock<Config>()
         whenever(config.APS).thenReturn(true)

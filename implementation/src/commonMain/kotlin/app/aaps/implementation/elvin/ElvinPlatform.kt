@@ -5,6 +5,7 @@ import app.aaps.core.interfaces.notifications.AlarmSound
 
 /** Android audio is deliberately independent of, and lower priority than, official safety audio. */
 interface ElvinPlatform {
+    enum class Notice { NIGHTSCOUT, BACKUP }
     val supported: Boolean
     fun status(): Map<String, String>
     fun present(channel: ElvinChannel, text: String)
@@ -14,4 +15,5 @@ interface ElvinPlatform {
     fun dismiss(channel: ElvinChannel)
     fun share(text: String)
     fun openSettings(kind: String)
+    fun notice(kind: Notice, text: String?) = Unit
 }

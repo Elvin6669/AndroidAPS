@@ -14,6 +14,8 @@ import kotlinx.serialization.json.JsonElement
  * Implementation is in plugins:sync module.
  */
 interface NSClientRepository {
+    /** Read-only intent; custom upload monitoring must not label a deliberate pause as failure. */
+    fun uploadsPaused(): Boolean = false
 
     /** Current sync queue size */
     val queueSize: StateFlow<Long>

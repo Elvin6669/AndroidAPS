@@ -59,7 +59,8 @@ jobs:
           set -o pipefail
           for attempt in 1 2 3; do
             if ./gradlew :implementation:testAndroidHostTest :core:keys:testAndroidHostTest \
-              :plugins:constraints:testAndroidHostTest :ui:compileAndroidMain \
+              :plugins:constraints:testAndroidHostTest :plugins:automation:testAndroidHostTest \
+              :plugins:sync:testAndroidHostTest :ui:compileAndroidMain \
               :pump:omnipod:dash:compileDebugKotlin :app:compileFullDebugKotlin -PfirebaseDisable \
               --no-daemon --continue --max-workers=3 \
               -Dorg.gradle.jvmargs='-Xmx3g -Xss4m' -Pkotlin.daemon.jvmargs=-Xmx4g \
@@ -81,3 +82,5 @@ jobs:
             implementation/build/test-results
             core/keys/build/test-results
             plugins/constraints/build/test-results
+            plugins/automation/build/test-results
+            plugins/sync/build/test-results

@@ -24,9 +24,10 @@ class ElvinMonitorIntegrationTest {
         override val supported = true
         val played = mutableListOf<ElvinChannel>()
         var failStop = false
+        var failStatus = false
         override fun present(channel: ElvinChannel, text: String) = Unit
         override fun onSnooze(action: (ElvinChannel) -> Unit) = Unit
-        override fun status() = mapOf("test" to "allowlisted status")
+        override fun status(): Map<String, String> { if (failStatus) error("test-only private failure details"); return mapOf("test" to "allowlisted status") }
         override fun play(channel: ElvinChannel, sound: AlarmSound, test: Boolean) { played.add(channel) }
         override fun stop(channel: ElvinChannel) { if (failStop) error("test-only stop failure") }
         override fun dismiss(channel: ElvinChannel) = Unit
@@ -92,14 +93,13 @@ class ElvinMonitorIntegrationTest {
     }
     @Test fun `monitor failure cannot escape into official alarm path`() = runTest {
         val f = Fixture(); f.setup()
-        whenever(f.persistence.getLastGlucoseValue()).thenThrow(IllegalStateException("test"))
+        f.platform.failStatus = true
         val monitor = f.monitor()
         monitor.tick()
         assertTrue(monitor.diagnostics.value.contains("official AAPS alarms remain unchanged"))
     }
     @Test fun `even a failed custom cleanup cannot block official alarm processing`() = runTest {
-        val f = Fixture(); f.setup(); f.platform.failStop = true
-        whenever(f.persistence.getLastGlucoseValue()).thenThrow(IllegalStateException("test-only private failure details"))
+        val f = Fixture(); f.setup(); f.platform.failStop = true; f.platform.failStatus = true
         val monitor = f.monitor()
         monitor.tick()
         assertTrue(monitor.diagnostics.value.contains("official AAPS alarms remain unchanged"))
@@ -150,5 +150,28 @@ class ElvinMonitorIntegrationTest {
         f.now += 60_000
         monitor.tick(ElvinSampleSource.MANUAL)
         assertTrue(monitor.diagnostics.value.contains("last periodic sample=1000000"))
+    }
+    @Test fun `a failing CGM database read does not block a pump communication warning`() = runTest {
+        val f = Fixture(); f.setup()
+        f.preferences.put(ElvinBooleanKey.PumpEnabled, true)
+        whenever(f.persistence.getLastGlucoseValue()).thenThrow(IllegalStateException("private database error"))
+        f.now += 1_800_000
+        val monitor = f.monitor(); monitor.tick()
+        assertEquals(listOf(ElvinChannel.PUMP), f.platform.played)
+        assertTrue(monitor.diagnostics.value.contains("Monitoring inputs unavailable"))
+        assertFalse(monitor.diagnostics.value.contains("private database error"))
+    }
+    @Test fun `diagnostics remain readable while custom overrides are disabled`() = runTest {
+        val f = Fixture(); f.setup(false)
+        val monitor = f.monitor(); monitor.tick(ElvinSampleSource.MANUAL)
+        assertTrue(monitor.diagnostics.value.contains("last successful timestamp=1000000"))
+        assertTrue(f.platform.played.isEmpty())
+    }
+    @Test fun `allowlisted alarm history survives monitor reconstruction`() = runTest {
+        val f = Fixture(); f.setup()
+        val monitor = f.monitor(); monitor.tick(); f.now += 600_000; monitor.tick()
+        val restored = f.monitor(); restored.tick(ElvinSampleSource.MANUAL)
+        assertTrue(restored.diagnostics.value.contains("ALARM CGM"))
+        assertTrue(restored.diagnostics.value.contains("SAMPLE_PERIODIC"))
     }
 }

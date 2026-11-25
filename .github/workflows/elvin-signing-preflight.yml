@@ -28,12 +28,12 @@ jobs:
           env=os.environ
           try:
               if env.get('STORED_SET'):
-                  parts=base64.b64decode(env['STORED_SET'],validate=True).decode().split('|')
+                  parts=base64.b64decode(''.join(env['STORED_SET'].split()),validate=True).decode().rstrip('\r\n').split('|')
                   if len(parts)!=4: raise ValueError()
               else:
                   parts=[env.get(k,'') for k in ['STORED_KEY','STORED_PASSWORD','STORED_ALIAS','STORED_KEY_PASSWORD']]
               if not all(parts): raise ValueError()
-              key=base64.b64decode(parts[0],validate=True)
+              key=base64.b64decode(''.join(parts[0].split()),validate=True)
               dest=pathlib.Path(env['RUNNER_TEMP'])/'elvin-signing.jks'
               fd=os.open(dest,os.O_CREAT|os.O_WRONLY|os.O_TRUNC,0o600)
               with os.fdopen(fd,'wb') as f: f.write(key)
@@ -73,15 +73,27 @@ jobs:
           STORED_DRIVE: ${{ secrets.GDRIVE_OAUTH2 }}
         shell: python
         run: |
-          import os,base64,json,urllib.request,urllib.parse
+          import os,base64,json,urllib.request,urllib.parse,urllib.error
+          stage="decode"
           try:
-              client,refresh=base64.b64decode(os.environ['STORED_DRIVE'],validate=True).decode().split('|')
+              client,refresh=base64.b64decode(''.join(os.environ['STORED_DRIVE'].split()),validate=True).decode().rstrip('\r\n').split('|')
               body=urllib.parse.urlencode(dict(client_id=client,refresh_token=refresh,grant_type='refresh_token')).encode()
+              stage="OAuth refresh"
               with urllib.request.urlopen('https://oauth2.googleapis.com/token',data=body,timeout=30) as r: token=json.load(r)['access_token']
+              stage="Drive read-only access"
               request=urllib.request.Request('https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)',headers={'Authorization':'Bearer '+token})
               with urllib.request.urlopen(request,timeout=30) as r: json.load(r)
               with open('preflight-report.txt','a') as f: f.write('Existing Drive OAuth refresh and read-only API access: VALID\n')
-          except Exception:
+          except Exception as error:
+              reason='configuration could not be decoded'
+              if isinstance(error,urllib.error.HTTPError):
+                  reason=f'HTTP {error.code}'
+                  try:
+                      code=json.loads(error.read()).get('error')
+                      if code in ['invalid_grant','invalid_client','unauthorized_client','access_denied']:
+                          reason+=' '+code
+                  except Exception: pass
+              with open('preflight-report.txt','a') as f: f.write(f'Drive preflight failed at {stage}: {reason}; existing credentials preserved\n')
               with open('preflight-report.txt','a') as f: f.write('Existing Drive OAuth/API validation: FAILED; credentials unchanged, response withheld\n')
               raise SystemExit('Drive validation failed. Credentials and response contents withheld.')
       - uses: actions/upload-artifact@v4

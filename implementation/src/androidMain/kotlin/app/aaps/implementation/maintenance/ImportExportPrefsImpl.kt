@@ -417,6 +417,20 @@ class ImportExportPrefsImpl(
         return resultOk
     }
 
+    override suspend fun executeAutomaticExport(password: String): ExportResult {
+        // Reuse the existing encrypted format, folder creation and cloud delivery. Unlike the
+        // legacy fire-and-forget API this awaits cloud success and never touches a manual export's slot.
+        val cfg = getExportConfig()
+        val local = if (cfg.settingsLocal) {
+            prefFileList.ensureExportDirExists()
+            prefFileList.newPreferenceFile()?.let { savePreferences(it, password) } ?: false
+        } else null
+        val cloud = if (cfg.settingsCloud) {
+            if (cfg.isCloudActive) performCloudExport(password) else false
+        } else null
+        return ExportResult(localSuccess = local, cloudSuccess = cloud)
+    }
+
     override fun exportSharedPreferencesNonInteractive(password: String): Boolean {
         // Check export destination preferences (same logic as manual export)
         val localEnabled = preferences.get(BooleanNonKey.ExportSettingsLocalEnabled)

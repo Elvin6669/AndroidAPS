@@ -266,7 +266,9 @@ enum class NotificationId(
     // EI ids are appended to preserve all existing persisted ordinals.
     ELVIN_PUMP_LOSS(IMPORTANT, PUMP),
     ELVIN_CGM_LOSS(IMPORTANT, CGM),
-    ELVIN_RECOVERY(INFO, SYSTEM);
+    ELVIN_RECOVERY(INFO, SYSTEM),
+    ELVIN_NIGHTSCOUT_STALLED(IMPORTANT, SYNC),
+    ELVIN_BACKUP_STATUS(IMPORTANT, SYSTEM);
 
     companion object {
 

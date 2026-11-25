@@ -27,53 +27,63 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
         val preferences = LocalPreferences.current
         val config = LocalConfig.current
         val scope = rememberCoroutineScope()
-        var diagnosticsPage by remember { mutableStateOf(false) }
+        var page by remember { mutableStateOf("settings") }
+        var settingsRevision by remember { mutableStateOf(0) }
         var confirmReset by remember { mutableStateOf(false) }
         var resetGeneration by remember { mutableStateOf(0) }
         val diagnosticText by monitor.diagnostics.collectAsState()
+        val profileText by monitor.profileHistory.collectAsState()
+        val maintenanceText by monitor.maintenanceStatus.collectAsState()
+        val customEnabled by preferences.observe(ElvinBooleanKey.Enabled).collectAsState()
         val expiration = preferences.get(LongComposedKey.AppExpiration, config.VERSION_NAME)
         Scaffold(topBar = {
-            AapsTopAppBar(title = { Text(if (diagnosticsPage) "Elvin Connection Diagnostics" else "Elvin Settings") },
-                navigationIcon = { TextButton(onClick = { if (diagnosticsPage) diagnosticsPage = false else onBack() }) { Text("Back") } })
+            AapsTopAppBar(title = { Text(when (page) { "diagnostics" -> "Elvin Connection Diagnostics"; "profiles" -> "Elvin Profile History"; else -> "Elvin Settings" }) },
+                navigationIcon = { TextButton(onClick = { if (page != "settings") page = "settings" else onBack() }) { Text("Back") } })
         }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item {
-                    Text("4.0.0-EI.1 · Android experimental custom monitoring", style = MaterialTheme.typography.titleMedium)
+                    Text("4.0.0-EI.2 · Android experimental custom monitoring", style = MaterialTheme.typography.titleMedium)
                     Text("Existing AAPS alarms and insulin safety constraints remain active. Timing and audibility require physical-device validation.")
                 }
-                if (diagnosticsPage) {
+                if (page != "settings") {
                     item {
-                        TextButton(onClick = { scope.launch { monitor.tick(ElvinSampleSource.MANUAL) } }) { Text("Refresh diagnostics") }
-                        TextButton(onClick = monitor::exportDiagnostics) { Text("Export diagnostic log (no credentials)") }
-                        Text(diagnosticText)
+                        if (page == "profiles") TextButton(onClick = { scope.launch { monitor.refreshProfiles() } }) { Text("Refresh profile history") }
+                        else TextButton(onClick = { scope.launch { monitor.tick(ElvinSampleSource.MANUAL) } }) { Text("Refresh diagnostics") }
+                        if (page == "diagnostics") TextButton(onClick = monitor::exportDiagnostics) { Text("Export diagnostic log (no credentials)") }
+                        Text(if (page == "profiles") profileText else diagnosticText + "\n" + maintenanceText)
                     }
                     item {
-                        Text("Allowlisted observations only. Pump attempt counts cover AAPS status reads, not every Bluetooth transaction. Zero timestamps mean not observed, not success.")
+                        Text(if (page == "profiles") "Reads existing AAPS requested/effective profile records. This page cannot change a profile or insulin delivery."
+                            else "Allowlisted observations only. Pump attempt counts cover AAPS status reads, not every Bluetooth transaction. Zero timestamps mean not observed, not success.")
                     }
                 } else {
                     item {
-                        TextButton(onClick = { diagnosticsPage = true; scope.launch { monitor.tick(ElvinSampleSource.MANUAL) } }) { Text("Connection diagnostics and alarm history") }
+                        TextButton(onClick = { page = "diagnostics"; scope.launch { monitor.tick(ElvinSampleSource.MANUAL) } }) { Text("Connection diagnostics and alarm history") }
                     }
-                    ElvinBooleanKey.entries.forEach { setting ->
+                    item { TextButton(onClick = { page = "profiles"; scope.launch { monitor.refreshProfiles() } }) { Text("Profile change history (read-only)") } }
+                    ElvinBooleanKey.entries.filter { it !in ElvinKeys.legacyBooleans }.forEach { setting ->
                         item(key = setting.key) {
-                            val checked by preferences.observe(setting).collectAsState()
+                            val stored by preferences.observe(setting).collectAsState()
+                            val checked = remember(stored, settingsRevision, resetGeneration) { ElvinAudioSettings.boolean(preferences, setting) }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(setting.title.text, Modifier.weight(1f))
                                 Switch(checked = checked, onCheckedChange = {
                                     preferences.put(setting, it)
+                                    settingsRevision++
                                     scope.launch { monitor.tick(ElvinSampleSource.MANUAL) }
                                 })
                             }
                         }
                     }
-                    ElvinIntKey.entries.filter { it != ElvinIntKey.Schema }.forEach { setting ->
+                    ElvinIntKey.entries.filter { it != ElvinIntKey.Schema && it !in ElvinKeys.legacyInts }.forEach { setting ->
                         item(key = setting.key) {
-                            var text by remember(setting, resetGeneration) { mutableStateOf(preferences.get(setting).toString()) }
+                            var text by remember(setting, resetGeneration) { mutableStateOf(ElvinAudioSettings.integer(preferences, setting).toString()) }
                             val number = text.toIntOrNull()
                             val valid = number != null && number in setting.min..setting.max
                             OutlinedTextField(value = text, onValueChange = { value ->
                                 text = value
-                                value.toIntOrNull()?.takeIf { it in setting.min..setting.max }?.let { preferences.put(setting, it) }
+                                value.toIntOrNull()?.takeIf { it in setting.min..setting.max }?.let { preferences.put(setting, it)
+                                    settingsRevision++ }
                             }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                                 label = { Text(setting.title.text) },
                                 supportingText = { Text("${setting.min}–${setting.max}; valid edits save immediately") },
@@ -84,15 +94,15 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                         Text("Volume is a percentage of the selected Android audio stream. The OS stream volume and DND profile still apply; EI does not force global volume to maximum.")
                         ElvinChannel.entries.forEach { channel ->
                             Row {
-                                TextButton(onClick = { monitor.test(channel) }) { Text("Test $channel alarm (30 seconds)") }
-                                TextButton(onClick = { monitor.snooze(channel) }) { Text("Snooze $channel") }
+                                TextButton(enabled = customEnabled, onClick = { monitor.test(channel) }) { Text("Test $channel alarm (30 seconds)") }
+                                TextButton(enabled = customEnabled, onClick = { monitor.snooze(channel) }) { Text("Snooze $channel") }
                             }
                         }
                         TextButton(onClick = monitor::stopTest) { Text("Stop custom audio") }
                     }
                     item {
                         Text("Permissions and background operation", style = MaterialTheme.typography.titleMedium)
-                        listOf("notifications", "dnd", "battery", "bluetooth").forEach { kind ->
+                        listOf("notifications", "dnd", "battery", "bluetooth", "audio").forEach { kind ->
                             TextButton(onClick = { monitor.openPermissionSettings(kind) }) { Text("Open $kind settings") }
                         }
                         Text("Grant permissions through Android. Battery exemption improves availability but cannot guarantee timing. After force-stop, reopen AAPS. WorkManager handles normal reboot rescheduling.")
@@ -105,12 +115,14 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                     }
                     item {
                         Text("Settings backup and import", style = MaterialTheme.typography.titleMedium)
-                        Text("Elvin settings are included in standard AAPS encrypted settings export/import. Use Maintenance for export, import and cloud backup. Device runtime, snoozes and diagnostics are excluded. No separate unencrypted settings export is created.")
+                        Text("Automatic encrypted backups reuse AAPS encryption and destinations. Configure a master password, enable unattended export and cache its password using Maintenance first. An existing enabled Automation export schedule takes precedence to avoid duplicates. Device runtime and snoozes are excluded from settings backups.")
+                        Text(maintenanceText)
+                        TextButton(enabled = customEnabled, onClick = monitor::backupNow) { Text("Encrypted backup now") }
                         TextButton(onClick = { confirmReset = true }) { Text("Reset only Elvin Settings") }
                     }
                     item {
-                        Text("EI.1 changelog", style = MaterialTheme.typography.titleMedium)
-                        Text("Added opt-in communication monitoring, separate timeouts/repeats/snoozes, audio previews and diagnostics. Live glucose targets, SMB, basal calculations, pump commands and safety restrictions are unchanged. Offline research tools live in tools/elvin-research.")
+                        Text("EI.2 changelog", style = MaterialTheme.typography.titleMedium)
+                        Text("EI.2: independent pump/CGM audio and recovery options; durable allowlisted history; upload-failure monitoring; read-only profile history; encrypted backup scheduling through existing AAPS storage. Live glucose targets, SMB, basal calculations, pump commands and safety restrictions are unchanged.")
                     }
                 }
                 item { Spacer(Modifier.height(24.dp)) }

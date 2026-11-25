@@ -48,6 +48,9 @@ interface ImportExportPrefs {
 
     fun exportCustomWatchface(customWatchface: CwfData, withDate: Boolean = true)
     fun exportSharedPreferencesNonInteractive(password: String): Boolean
+    /** Await a scheduled export result; Android overrides to avoid the manual pending-file slot. */
+    suspend fun executeAutomaticExport(password: String): ExportResult =
+        ExportResult(localSuccess = exportSharedPreferencesNonInteractive(password))
     fun exportUserEntriesCsv()
     suspend fun executeCsvExport(): ExportResult
 

@@ -18,6 +18,8 @@ import dev.zacsweers.metro.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 
 @ContributesBinding(AppScope::class)
@@ -34,6 +36,7 @@ class ElvinMonitorImpl(
     private val platform: ElvinPlatform
 ) : ElvinMonitor {
     private val stateLock = AapsLock()
+    private val tickMutex = Mutex()
     private val output = MutableStateFlow("Elvin monitor has not run yet. Android background timing is not guaranteed.")
     override val diagnostics: StateFlow<String> = output
     private val events = ArrayDeque<String>()
@@ -68,7 +71,7 @@ class ElvinMonitorImpl(
 
     override suspend fun tick() {
         // This hook must never prevent the existing AAPS alarm/maintenance path from running.
-        try { evaluate() }
+        try { tickMutex.withLock { evaluate() } }
         catch (e: CancellationException) { throw e }
         catch (_: Exception) {
             ElvinChannel.entries.forEach { platform.stop(it) }
@@ -85,54 +88,56 @@ class ElvinMonitorImpl(
         val lastCgm = if (enabled) persistence.getLastGlucoseValue()?.timestamp else null
         val status = platform.status()
         stateLock.withLock {
-        val summary = mutableListOf("Elvin 4.0.0-EI.1; enabled=$enabled", "Worker sample: $now; previous=$lastTick; gap(ms)=${if (lastTick > 0) now - lastTick else 0}")
-        if (enabled) record("Background monitor sample")
-        lastTick = now
-        ElvinChannel.entries.forEach { channel ->
-            val pumpChannel = channel == ElvinChannel.PUMP
-            val last = if (pumpChannel) lastPump else lastCgm
-            val policy = Policy.Settings(enabled && preferences.get(if (pumpChannel) ElvinBooleanKey.PumpEnabled else ElvinBooleanKey.CgmEnabled),
-                int(if (pumpChannel) ElvinIntKey.PumpTimeout else ElvinIntKey.CgmTimeout),
-                int(if (pumpChannel) ElvinIntKey.PumpRepeat else ElvinIntKey.CgmRepeat))
-            val decision = Policy.evaluate(policy, states[channel] ?: Policy.State(), Policy.Observation(now, last,
-                intentionalDisconnect = pumpChannel && disconnected,
-                configured = !pumpChannel || pump?.isConfigured() == true,
-                suspended = pumpChannel && pump?.isSuspended() == true,
-                terminalPodState = pumpChannel && pump?.elvinCommunicationContext?.terminal == true))
-            states[channel] = decision.state
-            summary.add("$channel: last successful timestamp=${last ?: "none"}; age(ms)=${last?.let { now - it } ?: "unknown"}; ${decision.reason}")
-            when (decision.event) {
-                Policy.Event.ALARM -> {
-                    record("$channel alarm: ${decision.reason}")
-                    notifications.post(id(channel), TextRef.Literal("Elvin $channel: ${decision.reason}"), actions = listOf(
-                        NotificationAction(TextRef.Literal("Snooze custom alarm")) { snooze(channel) }))
-                    // Standard audible safety alarms always take priority over custom playback.
-                    if (notifications.notifications.value.any { it.sound != null }) {
+        // A reset/disable may have happened while persistence or running-mode lookup suspended.
+            val enabledNow = enabled && preferences.get(ElvinBooleanKey.Enabled)
+            val summary = mutableListOf("Elvin 4.0.0-EI.1; enabled=$enabled", "Worker sample: $now; previous=$lastTick; gap(ms)=${if (lastTick > 0) now - lastTick else 0}")
+            if (enabled) record("Background monitor sample")
+            lastTick = now
+            ElvinChannel.entries.forEach { channel ->
+                val pumpChannel = channel == ElvinChannel.PUMP
+                val last = if (pumpChannel) lastPump else lastCgm
+                val policy = Policy.Settings(enabledNow && preferences.get(if (pumpChannel) ElvinBooleanKey.PumpEnabled else ElvinBooleanKey.CgmEnabled),
+                    int(if (pumpChannel) ElvinIntKey.PumpTimeout else ElvinIntKey.CgmTimeout),
+                    int(if (pumpChannel) ElvinIntKey.PumpRepeat else ElvinIntKey.CgmRepeat))
+                val decision = Policy.evaluate(policy, states[channel] ?: Policy.State(), Policy.Observation(now, last,
+                    intentionalDisconnect = pumpChannel && disconnected,
+                    configured = !pumpChannel || pump?.isConfigured() == true,
+                    suspended = pumpChannel && pump?.isSuspended() == true,
+                    terminalPodState = pumpChannel && pump?.elvinCommunicationContext?.terminal == true))
+                states[channel] = decision.state
+                summary.add("$channel: last successful timestamp=${last ?: "none"}; age(ms)=${last?.let { now - it } ?: "unknown"}; ${decision.reason}")
+                when (decision.event) {
+                    Policy.Event.ALARM -> {
+                        record("$channel alarm: ${decision.reason}")
+                        notifications.post(id(channel), TextRef.Literal("Elvin $channel: ${decision.reason}"), actions = listOf(
+                            NotificationAction(TextRef.Literal("Snooze custom alarm")) { snooze(channel) }))
+                        // Standard audible safety alarms always take priority over custom playback.
+                        if (notifications.notifications.value.any { it.sound != null }) {
+                            platform.stop(channel)
+                            summary.add("$channel custom audio deferred: official audible alarm active")
+                        } else platform.play(channel, sound(channel))
+                    }
+                    Policy.Event.RECOVERY -> {
                         platform.stop(channel)
-                        summary.add("$channel custom audio deferred: official audible alarm active")
-                    } else platform.play(channel, sound(channel))
+                        notifications.dismiss(id(channel))
+                        record("$channel recovered")
+                        if (preferences.get(ElvinBooleanKey.Recovery)) notifications.post(NotificationId.ELVIN_RECOVERY,
+                            TextRef.Literal("Elvin $channel communication recovered"), validMinutes = 5)
+                    }
+                    Policy.Event.CLEAR -> { platform.stop(channel); notifications.dismiss(id(channel)) }
+                    Policy.Event.NONE -> if (decision.reason == "Custom alarm snoozed") platform.stop(channel)
                 }
-                Policy.Event.RECOVERY -> {
-                    platform.stop(channel)
-                    notifications.dismiss(id(channel))
-                    record("$channel recovered")
-                    if (preferences.get(ElvinBooleanKey.Recovery)) notifications.post(NotificationId.ELVIN_RECOVERY,
-                        TextRef.Literal("Elvin $channel communication recovered"), validMinutes = 5)
-                }
-                Policy.Event.CLEAR -> { platform.stop(channel); notifications.dismiss(id(channel)) }
-                Policy.Event.NONE -> if (decision.reason == "Custom alarm snoozed") platform.stop(channel)
             }
-        }
-        summary.add("Pump suspended=${pump?.isSuspended() ?: "unknown"}; intentional disconnection=$disconnected")
-        summary.add("Pod state: ${pump?.elvinCommunicationContext?.description ?: "not sampled"}")
-        summary.add("Pump status-read attempts (this process): ${ElvinTelemetry.pump.value}")
-        summary.add("Nightscout V3 upload observations (this process): ${ElvinTelemetry.nightscout.value}")
-        summary.addAll(status.map { "${it.key}: ${it.value}" })
-        summary.add("Scheduling is best effort. A stopped/force-stopped app cannot monitor itself; use independent external monitoring.")
-        summary.add("Timestamps are epoch milliseconds. No glucose values, credentials, identifiers or response bodies are exported.")
-        summary.addAll(events)
-        output.value = summary.joinToString("\n")
-        persist()
+            summary.add("Pump suspended=${pump?.isSuspended() ?: "unknown"}; intentional disconnection=$disconnected")
+            summary.add("Pod state: ${pump?.elvinCommunicationContext?.description ?: "not sampled"}")
+            summary.add("Pump status-read attempts (this process): ${ElvinTelemetry.pump.value}")
+            summary.add("Nightscout V3 upload observations (this process): ${ElvinTelemetry.nightscout.value}")
+            summary.addAll(status.map { "${it.key}: ${it.value}" })
+            summary.add("Scheduling is best effort. A stopped/force-stopped app cannot monitor itself; use independent external monitoring.")
+            summary.add("Timestamps are epoch milliseconds. No glucose values, credentials, identifiers or response bodies are exported.")
+            summary.addAll(events)
+            output.value = summary.joinToString("\n")
+            persist()
         }
     }
 

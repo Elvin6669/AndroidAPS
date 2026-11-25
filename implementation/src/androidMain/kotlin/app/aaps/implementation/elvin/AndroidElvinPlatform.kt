@@ -20,6 +20,7 @@ import app.aaps.core.ui.rawRes
 import dev.zacsweers.metro.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.drop
 
 @ContributesBinding(AppScope::class)
 @SingleIn(AppScope::class)
@@ -45,16 +46,17 @@ class AndroidElvinPlatform(
             notifications.notifications.collect { list ->
                 if (list.any { it.sound != null }) ElvinChannel.entries.forEach(::stop)
                 else handler.post {
+                    val latest = notifications.notifications.value
                     ElvinChannel.entries.forEach { channel ->
                         val id = if (channel == ElvinChannel.PUMP) app.aaps.core.interfaces.notifications.NotificationId.ELVIN_PUMP_LOSS
                             else app.aaps.core.interfaces.notifications.NotificationId.ELVIN_CGM_LOSS
-                        if (channel !in previews && list.none { it.id == id }) stopNow(channel)
+                        if (channel !in previews && latest.none { it.id == id }) stopNow(channel)
                     }
                 }
             }
         }
         appScope.launch {
-            app.aaps.core.interfaces.elvin.ElvinTelemetry.muteGeneration.collect {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.muteGeneration.drop(1).collect {
                 ElvinChannel.entries.forEach(::stop)
             }
         }
@@ -138,6 +140,9 @@ class AndroidElvinPlatform(
                 ramps[channel] = ramp
                 player.setOnPreparedListener {
                     if (players[channel] === it) {
+                        if (notifications.notifications.value.any { notification -> notification.sound != null }) {
+                            stopNow(channel); return@setOnPreparedListener
+                        }
                         it.start(); handler.post(ramp); vibrate()
                         audioStatus[channel.name] = "playing; physical audibility unverified"
                     }

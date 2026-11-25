@@ -10,7 +10,7 @@ export function analyse(records, options = {}) {
     throw new Error('Research boundaries must be finite, independently specified, and ordered; lower >= 3.5 mmol/L.');
   if (!Array.isArray(records)) throw new Error('Expected an array of timestamped retrospective records.');
   let previous = -Infinity;
-  const profiles = {};
+  const profiles = Object.create(null);
   const rows = records.map(record => {
     const timestamp = Number(record.timestamp ?? record.date);
     const glucose = record.glucoseMmol ?? (Number.isFinite(record.sgv) ? record.sgv / 18.0182 : undefined);

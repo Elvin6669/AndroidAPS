@@ -828,6 +828,7 @@ class NSClientV3Plugin(
                 return true
             }
         } catch (e: Exception) {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), false)
             aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
             return false
         }
@@ -859,6 +860,7 @@ class NSClientV3Plugin(
                 return true
             }
         } catch (e: Exception) {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), false)
             aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
             return false
         }
@@ -915,6 +917,7 @@ class NSClientV3Plugin(
                 return true
             }
         } catch (e: Exception) {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), false)
             aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
             return false
         }
@@ -971,6 +974,7 @@ class NSClientV3Plugin(
                 return true
             }
         } catch (e: Exception) {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), false)
             aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
             return false
         }
@@ -1027,6 +1031,7 @@ class NSClientV3Plugin(
                 return true
             }
         } catch (e: Exception) {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), false)
             aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
             return false
         }
@@ -1158,7 +1163,8 @@ class NSClientV3Plugin(
                 }
             } catch (e: Exception) {
                 nsClientRepository.addLog("◄ ERROR", e.message)
-                aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
+                app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), false)
+            aapsLogger.error(LTag.NSCLIENT, "Upload exception", e)
                 return false
             }
         }

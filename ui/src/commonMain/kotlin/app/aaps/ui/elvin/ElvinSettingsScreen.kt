@@ -98,7 +98,7 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                     }
                     item {
                         Text("Update management", style = MaterialTheme.typography.titleMedium)
-                        Text("Known expiration for the current official version: ${if (expiration > 0) "$expiration (epoch milliseconds)" else "not currently recorded; this does not establish that no restriction exists"}")
+                        Text("Known expiration for the current official version: ${if (expiration > 0) kotlin.time.Instant.fromEpochMilliseconds(expiration).toString() else "not currently recorded; this does not establish that no restriction exists"}")
                         Text("Routine newer-version reminders are informational. Version expiration can restrict maximum IOB; signature, objectives and hard limits have separate safety roles. EI reminder snoozing never changes these restrictions.")
                         TextButton(onClick = {
                             preferences.put(ElvinUpdateLongKey.SnoozedUntil,

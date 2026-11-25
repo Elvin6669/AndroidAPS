@@ -50,7 +50,7 @@ class LocalAlertUtilsImpl(
     private val dateUtil: DateUtil,
     private val notificationManager: NotificationManager,
     private val appScope: CoroutineScope,
-    private val elvinMonitor: (() -> app.aaps.core.interfaces.elvin.ElvinMonitor)? = null
+    private val elvinMonitor: app.aaps.core.interfaces.elvin.ElvinMonitor? = null
 ) : LocalAlertUtils {
 
     init {
@@ -135,7 +135,7 @@ class LocalAlertUtilsImpl(
     override suspend fun checkStaleBGAlert() {
         // Additive EI monitoring runs before the standard no-record early return.
         // Existing AAPS threshold, snooze, notification and safety paths remain unchanged.
-        elvinMonitor?.invoke()?.tick()
+        elvinMonitor?.tick()
 
         val bgReading = persistenceLayer.getLastGlucoseValue() ?: return
         if (preferences.get(BooleanKey.AlertMissedBgReading)

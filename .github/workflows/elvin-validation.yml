@@ -18,6 +18,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
       - run: ./gradlew -p tools/elvin-policy-tests test --no-daemon
       - run: node --test tools/elvin-research/*.test.mjs
@@ -38,13 +39,15 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - run: sdkmanager 'platforms;android-37'
+          cmdline-tools-version: '16111833'
+      - run: sdkmanager 'platforms;android-37.0'
+      - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
       - name: Compile and test changed Android modules without assembling APKs
         run: >-
           ./gradlew :implementation:testAndroidHostTest :core:keys:testAndroidHostTest
           :plugins:constraints:testAndroidHostTest :ui:compileAndroidMain
-          :pump:omnipod:dash:compileDebugKotlin
+          :pump:omnipod:dash:compileDebugKotlin :app:compileFullDebugKotlin -PfirebaseDisable
           --no-daemon --max-workers=2
           -Dorg.gradle.jvmargs='-Xmx3g -Xss4m'
           -Pkotlin.daemon.jvmargs=-Xmx3g

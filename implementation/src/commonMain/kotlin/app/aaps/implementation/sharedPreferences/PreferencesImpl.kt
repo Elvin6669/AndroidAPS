@@ -108,7 +108,7 @@ class PreferencesImpl(
             UnitDoubleKey.entries +
             ProfileComposedStringKey.entries +
             ProfileComposedBooleanKey.entries +
-            ProfileIntKey.entries).toCollection(LinkedHashSet())
+            ProfileIntKey.entries + app.aaps.core.keys.elvin.ElvinKeys.all).toCollection(LinkedHashSet())
 
     /** Only so that two registrations at the same time cannot lose each other's keys. Readers do not take it. */
     private val prefsListLock = AapsLock()

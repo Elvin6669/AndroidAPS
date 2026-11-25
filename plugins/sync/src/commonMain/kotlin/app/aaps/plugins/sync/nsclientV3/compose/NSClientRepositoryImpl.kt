@@ -31,8 +31,12 @@ import kotlinx.serialization.json.JsonElement
 class NSClientRepositoryImpl(
     private val rxBus: RxBus,
     aapsLogger: AAPSLogger,
-    private val preferences: app.aaps.core.keys.interfaces.Preferences? = null
+    private val preferences: app.aaps.core.keys.interfaces.Preferences? = null,
+    private val activePlugin: (() -> app.aaps.core.interfaces.plugin.ActivePlugin)? = null
 ) : NSClientRepository {
+    override fun monitoringAvailable(): Boolean = activePlugin?.invoke()?.activeSyncs?.any {
+        it is app.aaps.plugins.sync.nsclientV3.NSClientV3Plugin
+    } ?: false
     override fun uploadsPaused(): Boolean = preferences?.get(app.aaps.plugins.sync.nsclientV3.keys.NsclientBooleanKey.NsPaused) ?: false
 
     private val log = SyncLogBuffer(aapsLogger, LTag.NSCLIENT)

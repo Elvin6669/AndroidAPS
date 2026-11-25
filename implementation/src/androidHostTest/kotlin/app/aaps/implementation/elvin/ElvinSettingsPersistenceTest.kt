@@ -19,7 +19,7 @@ class ElvinSettingsPersistenceTest {
         whenever(config.APS).thenReturn(true)
         whenever(config.platform).thenReturn(AppPlatform.Android)
         val active = mock<app.aaps.core.interfaces.plugin.ActivePlugin>()
-        whenever(active.getPluginsList()).thenReturn(emptyList())
+        whenever(active.getPluginsList()).thenReturn(arrayListOf())
         prefs.put(BooleanKey.AlertMissedBgReading, true)
         val applier = app.aaps.implementation.maintenance.PreferenceImportApplier(
             store, prefs, app.aaps.implementation.sharedPreferences.PreferenceKeyResolverFactory(prefs, active),

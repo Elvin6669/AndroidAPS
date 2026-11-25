@@ -30,6 +30,7 @@ class ElvinMaintenanceImplTest {
         f.prefs.put(ElvinBooleanKey.NightscoutMonitoring, true)
         f.prefs.put(BooleanKey.NsClientUploadData, true)
         whenever(f.repo.queueSize).thenReturn(MutableStateFlow(2L))
+        whenever(f.repo.monitoringAvailable()).thenReturn(true)
         whenever(f.repo.urlUpdate).thenReturn(MutableStateFlow("https://test.invalid"))
         val m = ElvinMaintenanceImpl(f.prefs, f.config, f.date, f.persistence, { f.exporter }, { f.password }, { f.automation }, { f.repo }, f.notices, f.platform, backgroundScope)
         m.onSample(true); m.awaitIdle()
@@ -42,6 +43,10 @@ class ElvinMaintenanceImplTest {
         assertTrue(m.status.value.contains("intentionally paused"))
         assertEquals(0L, f.prefs.get(ElvinMaintenanceLongKey.NsPendingSince))
         verify(f.notices).dismiss(NotificationId.ELVIN_NIGHTSCOUT_STALLED)
+        whenever(f.repo.uploadsPaused()).thenReturn(false)
+        whenever(f.repo.monitoringAvailable()).thenReturn(false)
+        m.onSample(true); m.awaitIdle()
+        assertTrue(m.status.value.contains("V3 not configured"))
         verifyNoInteractions(f.exporter, f.password)
     }
     @Test fun `profile history is read only and uses configured window`() = runTest {
@@ -106,6 +111,15 @@ class ElvinMaintenanceImplTest {
         verify(f.exporter, never()).executeAutomaticExport(any())
         assertTrue(m.status.value.contains("expired"))
         assertFalse(m.status.value.contains("test-only"))
+    }
+    @Test fun `missing destinations cannot be reported as a successful encrypted backup`() = runTest {
+        val f = Fixture(); f.setup()
+        whenever(f.exporter.getExportConfig()).thenReturn(ExportConfig(false, false, false, false, false, false, false, false, false, null))
+        val m = ElvinMaintenanceImpl(f.prefs, f.config, f.date, f.persistence, { f.exporter }, { f.password }, { f.automation }, { f.repo }, f.notices, f.platform, backgroundScope)
+        m.backupNow(); m.awaitIdle()
+        verify(f.exporter, never()).executeAutomaticExport(any())
+        assertEquals(0L, f.prefs.get(ElvinMaintenanceLongKey.LastBackup))
+        assertTrue(m.status.value.contains("No encrypted backup destination"))
     }
     @Test fun `partial cloud failure is reported and successful local backup throttles schedule`() = runTest {
         val f = Fixture(); f.setup()

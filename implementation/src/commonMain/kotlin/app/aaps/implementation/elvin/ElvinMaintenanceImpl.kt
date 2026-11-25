@@ -100,7 +100,7 @@ class ElvinMaintenanceImpl(
         val queue = repo.queueSize.value.coerceAtLeast(0)
         val success = preferences.get(ElvinMaintenanceLongKey.LastNsSuccess)
         val failure = preferences.get(ElvinMaintenanceLongKey.NsFailures)
-        val decision = ElvinMaintenancePolicy.upload(now, true, repo.urlUpdate.value.isNotBlank(),
+        val decision = ElvinMaintenancePolicy.upload(now, true, repo.monitoringAvailable() && repo.urlUpdate.value.isNotBlank(),
             preferences.get(BooleanKey.NsClientUploadData), queue,
             preferences.get(ElvinMaintenanceLongKey.LastNsAttempt), success, failure,
             preferences.get(ElvinMaintenanceLongKey.NsPendingSince), preferences.get(ElvinMaintenanceLongKey.LastNsWarning),

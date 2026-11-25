@@ -56,9 +56,18 @@ class AndroidElvinPlatform(
     private var receiverRegistered = false
     private var snoozeAction: ((ElvinChannel) -> Unit)? = null
     private val notificationBase = 940_000
+    /** Custom Android callbacks must not crash the process hosting the official safety alarms. */
+    private fun safely(action: () -> Unit) {
+        try { action() }
+        catch (_: Exception) {
+            audioStatus["runtime"] = "custom Android action failed; official audio untouched"
+            players.keys.toList().forEach { channel -> runCatching { stopNow(channel) } }
+        }
+    }
+    private fun onMain(action: () -> Unit) { handler.post { safely(action) } }
     private val snoozeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            ElvinChannel.entries.firstOrNull { it.name == intent?.getStringExtra("channel") }?.let { snoozeAction?.invoke(it) }
+            safely { ElvinChannel.entries.firstOrNull { it.name == intent?.getStringExtra("channel") }?.let { snoozeAction?.invoke(it) } }
         }
     }
 
@@ -69,7 +78,7 @@ class AndroidElvinPlatform(
         appScope.launch {
             notifications.notifications.collect { list ->
                 if (list.any { it.sound != null }) ElvinChannel.entries.forEach(::stop)
-                else handler.post {
+                else onMain {
                     val latest = notifications.notifications.value
                     ElvinChannel.entries.forEach { channel ->
                         val id = if (channel == ElvinChannel.PUMP) app.aaps.core.interfaces.notifications.NotificationId.ELVIN_PUMP_LOSS
@@ -118,13 +127,13 @@ class AndroidElvinPlatform(
     }
 
     override fun play(channel: ElvinChannel, sound: AlarmSound, test: Boolean) {
-        handler.post {
+        onMain {
             ensureObservers()
-            if (!preferences.get(ElvinBooleanKey.Enabled)) { stopNow(channel); return@post }
+            if (!preferences.get(ElvinBooleanKey.Enabled)) { stopNow(channel); return@onMain }
             if (officialAudioActive()) {
                 stopNow(channel)
                 audioStatus[channel.name] = "deferred to official audible safety alarm"
-                return@post
+                return@onMain
             }
             val dnd = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
             val dndOverride = preferences.get(ElvinBooleanKey.DndOverride)
@@ -132,10 +141,10 @@ class AndroidElvinPlatform(
                 stopNow(channel)
                 audioStatus[channel.name] = "DND sound suppressed; check custom override and policy access"
                 vibrate()
-                return@post
+                return@onMain
             }
             // Reposting a repeat must not reset a ten-minute escalation every five minutes.
-            if (!test && channel in players && channel !in previews) { vibrate(); return@post }
+            if (!test && channel in players && channel !in previews) { vibrate(); return@onMain }
             stopNow(channel)
             val alarmStream = preferences.get(ElvinBooleanKey.SilentOverride) || (dnd && dndOverride)
             try {
@@ -160,37 +169,41 @@ class AndroidElvinPlatform(
                 if (test) previews.add(channel)
                 val ramp = object : Runnable {
                     override fun run() {
-                        if (players[channel] !== player) return
-                        if (officialAudioActive()) {
-                            stopNow(channel); audioStatus[channel.name] = "deferred to official audible safety alarm"; return
+                        safely {
+                            if (players[channel] !== player) return@safely
+                            if (officialAudioActive()) {
+                                stopNow(channel); audioStatus[channel.name] = "deferred to official audible safety alarm"; return@safely
+                            }
+                            // Permission/DND changes take effect during an already-playing alarm.
+                            val dndNow = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
+                            if (!preferences.get(ElvinBooleanKey.Enabled) || (dndNow &&
+                                    (!preferences.get(ElvinBooleanKey.DndOverride) || !nm.isNotificationPolicyAccessGranted))) {
+                                stopNow(channel); return@safely
+                            }
+                            val elapsed = SystemClock.elapsedRealtime() - started
+                            if (test && elapsed >= 30_000L) { stopNow(channel); return@safely }
+                            val volume = CommunicationAlarmPolicy.volume(
+                                preferences.get(ElvinIntKey.StartVolume), preferences.get(ElvinIntKey.MaxVolume), elapsed,
+                                preferences.get(ElvinIntKey.EscalationMinutes), preferences.get(ElvinBooleanKey.Escalate))
+                            runCatching { player.setVolume(volume, volume) }
+                            handler.postDelayed(this, 1_000)
                         }
-                        // Permission/DND changes take effect during an already-playing alarm.
-                        val dndNow = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
-                        if (!preferences.get(ElvinBooleanKey.Enabled) || (dndNow &&
-                                (!preferences.get(ElvinBooleanKey.DndOverride) || !nm.isNotificationPolicyAccessGranted))) {
-                            stopNow(channel); return
-                        }
-                        val elapsed = SystemClock.elapsedRealtime() - started
-                        if (test && elapsed >= 30_000L) { stopNow(channel); return }
-                        val volume = CommunicationAlarmPolicy.volume(
-                            preferences.get(ElvinIntKey.StartVolume), preferences.get(ElvinIntKey.MaxVolume), elapsed,
-                            preferences.get(ElvinIntKey.EscalationMinutes), preferences.get(ElvinBooleanKey.Escalate))
-                        runCatching { player.setVolume(volume, volume) }
-                        handler.postDelayed(this, 1_000)
                     }
                 }
                 ramps[channel] = ramp
-                player.setOnPreparedListener {
-                    if (players[channel] === it) {
-                        if (officialAudioActive()) {
-                            stopNow(channel); return@setOnPreparedListener
+                player.setOnPreparedListener { prepared ->
+                    safely {
+                        if (players[channel] === prepared) {
+                            if (officialAudioActive()) {
+                                stopNow(channel); return@safely
+                            }
+                            prepared.start(); handler.post(ramp); vibrate()
+                            audioStatus[channel.name] = "playing; physical audibility unverified"
                         }
-                        it.start(); handler.post(ramp); vibrate()
-                        audioStatus[channel.name] = "playing; physical audibility unverified"
                     }
                 }
                 player.setOnErrorListener { _, _, _ ->
-                    audioStatus[channel.name] = "playback failed"; stopNow(channel); true
+                    safely { audioStatus[channel.name] = "playback failed"; stopNow(channel) }; true
                 }
                 player.prepareAsync()
             } catch (_: Exception) {
@@ -204,8 +217,8 @@ class AndroidElvinPlatform(
             vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 500, 300, 500), -1))
         }
     }
-    override fun stop(channel: ElvinChannel) { handler.post { stopNow(channel) } }
-    override fun dismiss(channel: ElvinChannel) { handler.post { stopNow(channel); nm.cancel(notificationBase + channel.ordinal) } }
+    override fun stop(channel: ElvinChannel) { onMain { stopNow(channel) } }
+    override fun dismiss(channel: ElvinChannel) { onMain { stopNow(channel); nm.cancel(notificationBase + channel.ordinal) } }
     private fun stopNow(channel: ElvinChannel) {
         if (audioStatus[channel.name]?.startsWith("playing") == true) audioStatus[channel.name] = "stopped"
         previews.remove(channel)
@@ -216,8 +229,8 @@ class AndroidElvinPlatform(
     }
     override fun onSnooze(action: (ElvinChannel) -> Unit) { snoozeAction = action }
     override fun present(channel: ElvinChannel, text: String) {
-        handler.post {
-            if (!preferences.get(ElvinBooleanKey.Enabled)) return@post
+        onMain {
+            if (!preferences.get(ElvinBooleanKey.Enabled)) return@onMain
             ensureObservers()
             try {
                 if (!receiverRegistered) {
@@ -241,7 +254,7 @@ class AndroidElvinPlatform(
             } catch (_: Exception) { audioStatus["notification"] = "unavailable; check notification permission/channel" }
         }
     }
-    override fun share(text: String) {
+    override fun share(text: String) = onMain {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
             .putExtra(Intent.EXTRA_SUBJECT, "Elvin AAPS diagnostics")
             .putExtra(Intent.EXTRA_TEXT, text)

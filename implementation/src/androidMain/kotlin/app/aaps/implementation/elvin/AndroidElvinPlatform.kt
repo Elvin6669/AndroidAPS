@@ -30,7 +30,6 @@ import app.aaps.implementation.androidNotification.AlarmNotificationManager
 import dev.zacsweers.metro.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.drop
 
 @ContributesBinding(AppScope::class)
 @SingleIn(AppScope::class)
@@ -93,9 +92,11 @@ class AndroidElvinPlatform(
                 }
             }
         }
+        val muteAtRegistration = app.aaps.core.interfaces.elvin.ElvinTelemetry.muteGeneration.value
         appScope.launch {
-            app.aaps.core.interfaces.elvin.ElvinTelemetry.muteGeneration.drop(1).collect {
-                ElvinChannel.entries.forEach(::stop)
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.muteGeneration.collect { generation ->
+                // A mute between registration and collector startup must not be dropped.
+                if (generation != muteAtRegistration) ElvinChannel.entries.forEach(::stop)
             }
         }
         appScope.launch {
@@ -213,6 +214,7 @@ class AndroidElvinPlatform(
                 player.setOnPreparedListener { prepared ->
                     safely {
                         if (players[channel] === prepared) {
+                            if (!preferences.get(ElvinBooleanKey.Enabled)) { stopNow(channel); return@safely }
                             if (!test && !customNotificationExists(channel)) { stopNow(channel); return@safely }
                             if (officialAudioActive()) {
                                 stopNow(channel); return@safely

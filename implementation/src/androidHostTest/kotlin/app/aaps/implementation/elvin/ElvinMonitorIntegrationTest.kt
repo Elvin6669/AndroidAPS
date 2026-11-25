@@ -20,6 +20,20 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.*
 
 class ElvinMonitorIntegrationTest {
+    @Test fun `reset during an outage disables future custom playback and preserves official alerts`() = runTest {
+        val f = Fixture(); f.setup()
+        f.preferences.put(app.aaps.core.keys.BooleanKey.AlertMissedBgReading, true)
+        val monitor = f.monitor(); monitor.tick(); f.now += 600_000; monitor.tick()
+        assertEquals(1, f.platform.played.size)
+        monitor.reset()
+        assertFalse(f.preferences.get(ElvinBooleanKey.Enabled))
+        assertEquals("", f.preferences.get(ElvinRuntimeKey.State))
+        f.now += 600_000; monitor.tick()
+        assertEquals(1, f.platform.played.size)
+        assertTrue(f.preferences.get(app.aaps.core.keys.BooleanKey.AlertMissedBgReading))
+        verify(f.notifications, atLeastOnce()).dismiss(NotificationId.ELVIN_RECOVERY)
+        verify(f.notifications, never()).dismiss(NotificationId.BG_READINGS_MISSED)
+    }
     private class Platform : ElvinPlatform {
         override val supported = true
         val played = mutableListOf<ElvinChannel>()

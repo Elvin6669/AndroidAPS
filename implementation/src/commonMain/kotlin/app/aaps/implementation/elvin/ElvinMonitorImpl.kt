@@ -180,6 +180,7 @@ class ElvinMonitorImpl(
                     }
                 }
             }
+            if (!enabledNow) notifications.dismiss(NotificationId.ELVIN_RECOVERY)
             summary.add("Pump suspended=${suspended ?: "unknown"}; intentional disconnection=${if (mode == null) "unknown" else disconnected}")
             if (sample && pump != null && mode == null) summary.add("Pump custom monitor suppressed: running-mode input unavailable; CGM monitoring continues")
             summary.add("Pod state: ${pumpContext?.description ?: "not sampled"}")
@@ -233,6 +234,7 @@ class ElvinMonitorImpl(
         states.clear(); events.clear(); lastTick = 0L; previouslyEnabled = false
         maintenance?.reset()
         ElvinChannel.entries.forEach { platform.dismiss(it); notifications.dismiss(id(it)) }
+        notifications.dismiss(NotificationId.ELVIN_RECOVERY)
         output.value = "Elvin settings reset. Custom monitoring is disabled. Standard AAPS settings were not changed."
     }
     override fun exportDiagnostics() = platform.share(output.value)

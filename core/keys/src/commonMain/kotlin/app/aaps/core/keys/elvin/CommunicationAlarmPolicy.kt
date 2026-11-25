@@ -24,7 +24,10 @@ object CommunicationAlarmPolicy {
         if (!settings.enabled) return Decision(State(), Event.CLEAR, "Custom monitoring disabled")
         if (!o.inputsAvailable) return Decision(state, Event.NONE, "Monitoring inputs unavailable; previous warning retained")
         val started = state.watchStarted.takeIf { it > 0 && it <= o.now } ?: o.now
-        val current = state.copy(watchStarted = started)
+        val rolledBack = state.watchStarted > o.now || state.lastAlarm > o.now
+        val current = state.copy(watchStarted = started,
+            lastAlarm = if (rolledBack) 0 else state.lastAlarm,
+            snoozedUntil = if (rolledBack) 0 else state.snoozedUntil)
         if (o.intentionalDisconnect || !o.configured || o.terminalPodState) {
             val reason = when {
                 o.intentionalDisconnect -> "Intentional AAPS pump disconnection"

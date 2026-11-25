@@ -70,6 +70,8 @@ defaults OFF; shared start 30% (0–100), max 100% (0–100), ramp 10 minutes (1
 to preserve EI.1 restore compatibility, not additional visible controls. Schema marker is 1 (fixed).
 Local runtime state/history, snoozes, reminder/backup/upload timestamps and counters are excluded
 from export/import; reset clears them. Standard passwords, backup files and Automation events remain.
+Restore follows standard AAPS merge semantics: keys absent from a backup keep their current value.
+For a fresh Elvin-only restore, reset Elvin Settings before importing; this does not reset standard AAPS.
 
 ## Remaining verification and release gates
 

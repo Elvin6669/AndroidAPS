@@ -127,6 +127,13 @@ class CommunicationAlarmPolicyTest {
         val previous = P.State(watchStarted = start, lastAlarm = start + 90 * 60_000L, active = true)
         assertEquals(P.Event.ALARM, P.evaluate(settings, previous, observation(30)).event)
     }
+    @Test fun `clock rollback cannot turn a short active snooze into a prolonged suppression`() {
+        val previous = P.State(watchStarted = start, lastAlarm = start + 90 * 60_000L,
+            snoozedUntil = start + 95 * 60_000L, active = true)
+        val result = P.evaluate(settings, previous, observation(30))
+        assertEquals(P.Event.ALARM, result.event)
+        assertEquals(0L, result.state.snoozedUntil)
+    }
     @Test fun `imported malformed thresholds are bounded`() {
         assertEquals(P.Event.CLEAR, P.evaluate(P.Settings(true, -100, -5), P.State(), observation(9)).event)
         assertEquals(P.Event.ALARM, P.evaluate(P.Settings(true, 9999, 9999), P.State(), observation(300)).event)

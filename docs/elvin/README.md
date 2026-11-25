@@ -72,6 +72,8 @@ migrated or overwritten. Absent EI.2 channel audio keys inherit EI.1 shared valu
 restoring an EI.1 backup; explicit channel choices take precedence. Legacy shared keys remain
 exportable for compatibility but are hidden from the page. Malformed runtime JSON is discarded. Monitor inputs are clamped even
 when imported preferences contain out-of-range numbers. Reset does not clear the application store.
+Standard restore merges values; keys omitted from the backup keep existing values. Reset Elvin
+Settings before import if a fresh Elvin-only restore is desired, especially for an older EI.1 backup.
 
 ## Upstream mechanisms already present
 

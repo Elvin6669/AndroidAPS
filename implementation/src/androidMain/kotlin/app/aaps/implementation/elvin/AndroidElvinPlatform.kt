@@ -104,6 +104,11 @@ class AndroidElvinPlatform(
 
     private fun granted(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     private fun officialAudioActive() = notifications.notifications.value.any { it.sound != null } || officialAlarms().unansweredAlarmIntent() != null
+    private fun customNotificationExists(channel: ElvinChannel): Boolean {
+        val id = if (channel == ElvinChannel.PUMP) app.aaps.core.interfaces.notifications.NotificationId.ELVIN_PUMP_LOSS
+            else app.aaps.core.interfaces.notifications.NotificationId.ELVIN_CGM_LOSS
+        return notifications.notifications.value.any { it.id == id }
+    }
     override fun status(): Map<String, String> {
         val btPermission = granted(Manifest.permission.BLUETOOTH_CONNECT) && granted(Manifest.permission.BLUETOOTH_SCAN)
         val bluetooth = if (!btPermission) "unknown (Nearby devices permission missing)" else runCatching {
@@ -130,6 +135,8 @@ class AndroidElvinPlatform(
         onMain {
             ensureObservers()
             if (!preferences.get(ElvinBooleanKey.Enabled)) { stopNow(channel); return@onMain }
+            // Global mute/dismissal may have raced the worker's queued playback request.
+            if (!test && !customNotificationExists(channel)) { stopNow(channel); return@onMain }
             if (officialAudioActive()) {
                 stopNow(channel)
                 audioStatus[channel.name] = "deferred to official audible safety alarm"
@@ -171,6 +178,7 @@ class AndroidElvinPlatform(
                     override fun run() {
                         safely {
                             if (players[channel] !== player) return@safely
+                            if (!test && !customNotificationExists(channel)) { stopNow(channel); return@safely }
                             if (officialAudioActive()) {
                                 stopNow(channel); audioStatus[channel.name] = "deferred to official audible safety alarm"; return@safely
                             }
@@ -194,6 +202,7 @@ class AndroidElvinPlatform(
                 player.setOnPreparedListener { prepared ->
                     safely {
                         if (players[channel] === prepared) {
+                            if (!test && !customNotificationExists(channel)) { stopNow(channel); return@safely }
                             if (officialAudioActive()) {
                                 stopNow(channel); return@safely
                             }

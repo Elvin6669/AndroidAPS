@@ -54,8 +54,12 @@ class BuiltInSearchables(
     private val rh: TextResolver,
     private val insulinManager: InsulinManager,
     private val profileFunction: ProfileFunction,
-    private val config: Config
+    private val config: Config,
+    private val elvinMonitor: app.aaps.core.interfaces.elvin.ElvinMonitor? = null
 ) : SearchableProvider {
+
+    val elvinScreen: app.aaps.core.ui.compose.ComposeScreenContent?
+        get() = elvinMonitor?.let { app.aaps.ui.elvin.ElvinSettingsScreen(it) }
 
     // Decides whether concentration-related preferences are worth surfacing in search, so an unknown
     // running insulin simply contributes nothing — the configured list still speaks for itself.

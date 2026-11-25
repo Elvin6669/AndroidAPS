@@ -193,6 +193,12 @@ fun AllPreferencesScreen(
                     state = listState
                 ) {
                     item { MasterOfflineBanner(editingEnabled = masterEditingEnabled()) }
+                    item {
+                        androidx.compose.material3.TextButton(onClick = { composeScreen = builtInSearchables.elvinScreen }) {
+                            Text("Elvin Settings")
+                        }
+                    }
+
                     // Built-in: General settings (first)
                     addPreferenceContent(generalPreferences, onShowMessage, sectionState)
                     addPreferenceContent(appearancePreferences, onShowMessage, sectionState)

@@ -813,6 +813,7 @@ class NSClientV3Plugin(
         try {
             nsClientRepository.addLog("► ADD $collection", "Sent ${dataPair::class.simpleName} $progress", data)
             nsAndroidClient?.createProfileStore(data)?.let { result ->
+                app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), result.response in 200..299)
                 when (result.response) {
                     200  -> nsClientRepository.addLog("◄ UPDATED", "OK ProfileStore")
                     201  -> nsClientRepository.addLog("◄ ADDED", "OK ProfileStore")
@@ -838,6 +839,7 @@ class NSClientV3Plugin(
             val data = dataPair.value.toNSDeviceStatus()
             nsClientRepository.addLog("► ADD $collection", "Sent ${dataPair::class.simpleName} $progress", Json {}.encodeToJsonElement(data))
             nsAndroidClient?.createDeviceStatus(data)?.let { result ->
+                app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), result.response in 200..299)
                 when (result.response) {
                     200  -> nsClientRepository.addLog("◄ UPDATED", "OK ${dataPair.value::class.simpleName}")
                     201  -> nsClientRepository.addLog("◄ ADDED", "OK ${dataPair.value::class.simpleName} ${result.identifier}")
@@ -883,6 +885,7 @@ class NSClientV3Plugin(
                 Json {}.encodeToJsonElement(data)
             )
             call?.let { it(data) }?.let { result ->
+                app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), result.response in 200..299)
                 when (result.response) {
                     200  -> {
                         nsClientRepository.addLog("◄ UPDATED", "OK ${dataPair.value::class.simpleName}")
@@ -938,6 +941,7 @@ class NSClientV3Plugin(
                 Json {}.encodeToJsonElement(data)
             )
             call?.let { it(data) }?.let { result ->
+                app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), result.response in 200..299)
                 when (result.response) {
                     200  -> {
                         nsClientRepository.addLog("◄ UPDATED", "OK ${dataPair.value::class.simpleName}")
@@ -993,6 +997,7 @@ class NSClientV3Plugin(
                 Json {}.encodeToJsonElement(data)
             )
             call?.let { it(data) }?.let { result ->
+                app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), result.response in 200..299)
                 when (result.response) {
                     200  -> {
                         nsClientRepository.addLog("◄ UPDATED", "OK ${dataPair.value::class.simpleName}")
@@ -1069,7 +1074,8 @@ class NSClientV3Plugin(
                     Json.encodeToJsonElement(data)
                 )
                 call?.let { it(data) }?.let { result ->
-                    when (result.response) {
+                    app.aaps.core.interfaces.elvin.ElvinTelemetry.nightscoutResult(dateUtil.now(), result.response in 200..299)
+                when (result.response) {
                         200  -> {
                             nsClientRepository.addLog("◄ UPDATED", "OK ${dataPair.value::class.simpleName}")
                             clearUpdateRetry(operation, id)

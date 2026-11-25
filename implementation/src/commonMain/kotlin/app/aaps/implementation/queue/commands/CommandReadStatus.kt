@@ -23,13 +23,20 @@ class CommandReadStatus(
     override val commandType: Command.CommandType = Command.CommandType.READSTATUS
 
     override suspend fun execute(): PumpEnactResult {
-        activePlugin.activePump.getPumpStatus(reason)
+        app.aaps.core.interfaces.elvin.ElvinTelemetry.pumpAttempt(Clock.System.now().toEpochMilliseconds())
+        try {
+            activePlugin.activePump.getPumpStatus(reason)
+        } catch (e: Exception) {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.pumpResult(Clock.System.now().toEpochMilliseconds(), false)
+            throw e
+        }
         localAlertUtils.reportPumpStatusRead()
         aapsLogger.debug(LTag.PUMPQUEUE, "CommandReadStatus executed. Reason: $reason")
         val pump = activePlugin.activePump
         val result = pumpEnactResultProvider().success(false)
         val lastConnection = pump.lastDataTime.value
         if (lastConnection > Clock.System.now().toEpochMilliseconds() - T.mins(1).msecs()) result.success(true)
+        app.aaps.core.interfaces.elvin.ElvinTelemetry.pumpResult(Clock.System.now().toEpochMilliseconds(), result.success)
         return result
     }
 

@@ -254,6 +254,12 @@ class OmnipodDashPumpPlugin(
         return podStateManager.isPodRunning
     }
 
+    override val elvinCommunicationContext: app.aaps.core.interfaces.elvin.ElvinPumpContext
+        get() = app.aaps.core.interfaces.elvin.ElvinPumpContext(
+            terminal = podStateManager.isPodKaput,
+            description = "DASH terminal=" + podStateManager.isPodKaput + "; nominal expiry=" + podStateManager.expiry
+        )
+
     override fun isSuspended(): Boolean {
         return podStateManager.isSuspended
     }

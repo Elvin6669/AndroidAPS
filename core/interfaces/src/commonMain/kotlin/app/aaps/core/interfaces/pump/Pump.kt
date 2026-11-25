@@ -19,6 +19,11 @@ import kotlinx.serialization.json.JsonObject
  */
 interface Pump {
 
+    /** Read-only EI diagnostics. Does not affect any communication or delivery decision. */
+    val elvinCommunicationContext: app.aaps.core.interfaces.elvin.ElvinPumpContext
+        get() = app.aaps.core.interfaces.elvin.ElvinPumpContext()
+
+
     /**
      * Whether the pump has been set up by the user and is ready for connection attempts.
      *

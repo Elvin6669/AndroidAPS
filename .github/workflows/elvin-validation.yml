@@ -36,6 +36,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - run: sdkmanager 'platforms;android-37'
       - run: chmod +x gradlew
       - name: Compile and test changed Android modules without assembling APKs

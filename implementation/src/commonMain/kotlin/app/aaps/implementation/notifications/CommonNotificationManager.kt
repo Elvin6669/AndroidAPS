@@ -196,6 +196,7 @@ class CommonNotificationManager(
      * whatever the platform is still showing for them. Non-audible notifications are left alone.
      */
     override fun muteAllAlarms() = lock.withLock {
+        app.aaps.core.interfaces.elvin.ElvinTelemetry.muteCustomAudio()
         val current = _notifications.value
         val audible = current.filter { it.level == NotificationLevel.URGENT && it.sound != null }
         if (audible.isNotEmpty()) {

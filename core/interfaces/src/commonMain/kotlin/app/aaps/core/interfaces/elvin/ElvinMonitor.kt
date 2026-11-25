@@ -25,6 +25,8 @@ object ElvinTelemetry {
     data class Attempts(val lastAttempt: Long = 0, val lastSuccess: Long = 0, val consecutiveFailures: Int = 0)
     val pump = MutableStateFlow(Attempts())
     val nightscout = MutableStateFlow(Attempts())
+    val muteGeneration = MutableStateFlow(0L)
+    fun muteCustomAudio() { muteGeneration.update { it + 1 } }
     fun pumpAttempt(now: Long) { pump.update { it.copy(lastAttempt = now) } }
     fun pumpResult(now: Long, success: Boolean) {
         pump.update { if (success) it.copy(lastSuccess = now, consecutiveFailures = 0)

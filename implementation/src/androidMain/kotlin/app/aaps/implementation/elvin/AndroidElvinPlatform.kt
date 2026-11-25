@@ -27,13 +27,14 @@ import kotlinx.coroutines.launch
 class AndroidElvinPlatform(
     private val context: Context,
     private val preferences: Preferences,
-    notifications: AapsNotifications,
+    private val notifications: AapsNotifications,
     appScope: CoroutineScope
 ) : ElvinPlatform {
     override val supported = true
     private val handler = Handler(Looper.getMainLooper())
     private val players = mutableMapOf<ElvinChannel, MediaPlayer>()
     private val ramps = mutableMapOf<ElvinChannel, Runnable>()
+    private val previews = mutableSetOf<ElvinChannel>()
     private val audioStatus = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val nm get() = context.getSystemService(NotificationManager::class.java)
     private val vibrator get() = context.getSystemService(VibratorManager::class.java).defaultVibrator
@@ -43,6 +44,18 @@ class AndroidElvinPlatform(
         appScope.launch {
             notifications.notifications.collect { list ->
                 if (list.any { it.sound != null }) ElvinChannel.entries.forEach(::stop)
+                else handler.post {
+                    ElvinChannel.entries.forEach { channel ->
+                        val id = if (channel == ElvinChannel.PUMP) app.aaps.core.interfaces.notifications.NotificationId.ELVIN_PUMP_LOSS
+                            else app.aaps.core.interfaces.notifications.NotificationId.ELVIN_CGM_LOSS
+                        if (channel !in previews && list.none { it.id == id }) stopNow(channel)
+                    }
+                }
+            }
+        }
+        appScope.launch {
+            app.aaps.core.interfaces.elvin.ElvinTelemetry.muteGeneration.collect {
+                ElvinChannel.entries.forEach(::stop)
             }
         }
         appScope.launch {
@@ -76,6 +89,10 @@ class AndroidElvinPlatform(
         handler.post {
             stopNow(channel)
             if (!preferences.get(ElvinBooleanKey.Enabled)) return@post
+            if (notifications.notifications.value.any { it.sound != null }) {
+                audioStatus[channel.name] = "deferred to official audible safety alarm"
+                return@post
+            }
             val dnd = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
             val dndOverride = preferences.get(ElvinBooleanKey.DndOverride)
             if (dnd && (!dndOverride || !nm.isNotificationPolicyAccessGranted)) {
@@ -101,6 +118,7 @@ class AndroidElvinPlatform(
                 val gain = CommunicationAlarmPolicy.volume(start, maximum, 0, duration, escalate)
                 player.setVolume(gain, gain)
                 players[channel] = player
+                if (test) previews.add(channel)
                 val ramp = object : Runnable {
                     override fun run() {
                         if (players[channel] !== player) return
@@ -141,6 +159,7 @@ class AndroidElvinPlatform(
     }
     override fun stop(channel: ElvinChannel) { handler.post { stopNow(channel) } }
     private fun stopNow(channel: ElvinChannel) {
+        previews.remove(channel)
         ramps.remove(channel)?.let(handler::removeCallbacks)
         players.remove(channel)?.let { player -> runCatching { player.stop() }; player.release() }
         if (players.isEmpty()) runCatching { vibrator.cancel() }

@@ -35,10 +35,12 @@ object CommunicationAlarmPolicy {
             return Decision(State(watchStarted = started), if (current.active) Event.RECOVERY else Event.CLEAR, "Communication current")
         }
         val outage = current.outageStarted.takeIf { it > 0 } ?: anchor
-        val active = current.copy(active = true, outageStarted = outage)
+        val snoozeExpired = current.snoozedUntil > 0 && o.now >= current.snoozedUntil
+        val active = current.copy(active = true, outageStarted = outage,
+            snoozedUntil = if (snoozeExpired) 0 else current.snoozedUntil)
         if (o.now < current.snoozedUntil) return Decision(active, Event.NONE, "Custom alarm snoozed")
         val repeat = settings.repeatMinutes.coerceIn(1, 300) * 60_000L
-        if (current.lastAlarm > 0 && o.now >= current.lastAlarm && o.now - current.lastAlarm < repeat)
+        if (!snoozeExpired && current.lastAlarm > 0 && o.now >= current.lastAlarm && o.now - current.lastAlarm < repeat)
             return Decision(active, Event.NONE, "Waiting for custom repeat interval")
         val reason = if (success == null) "No reading/communication record since monitoring began"
             else if (o.suspended) "Communication stale; pump is also suspended (suspension does not suppress this alarm)"

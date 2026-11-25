@@ -37,6 +37,16 @@ class CommunicationAlarmPolicyTest {
         assertEquals(P.Event.NONE, P.evaluate(settings, snoozed, observation(17)).event)
         assertEquals(P.Event.ALARM, P.evaluate(settings, snoozed, observation(18)).event)
     }
+    @Test fun `a short snooze expires independently of a longer repeat interval`() {
+        val config = settings.copy(repeatMinutes = 60)
+        val initial = P.evaluate(config, P.State(), observation(10))
+        val snoozed = P.snooze(initial.state, start + 600_000L, 3)
+        assertEquals(P.Event.NONE, P.evaluate(config, snoozed, observation(12)).event)
+        val resumed = P.evaluate(config, snoozed, observation(13))
+        assertEquals(P.Event.ALARM, resumed.event)
+        assertEquals(0L, resumed.state.snoozedUntil)
+        assertEquals(P.Event.NONE, P.evaluate(config, resumed.state, observation(14)).event)
+    }
     @Test fun `recovery clears snooze and emits once`() {
         val first = P.evaluate(settings, P.State(), observation(10))
         val recovered = P.evaluate(settings, first.state, observation(11, start + 11 * 60_000L))

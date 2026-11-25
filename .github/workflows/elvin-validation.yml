@@ -30,6 +30,8 @@ jobs:
           name: elvin-policy-test-results
           path: tools/elvin-policy-tests/build/test-results
   android:
+    env:
+      JAVA_TOOL_OPTIONS: -Drobolectric.dependency.repo.url=https://repo.maven.apache.org/maven2
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -47,6 +49,11 @@ jobs:
         with:
           cache-read-only: false
       - run: chmod +x gradlew
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: elvin-robolectric-${{ runner.os }}-15-i7
+
       - name: Compile and test changed Android modules without assembling APKs
         run: |
           set -o pipefail
@@ -60,7 +67,7 @@ jobs:
               exit 0
             fi
             # Retry transient dependency failures only; source/test failures remain failures.
-            if ! python3 -c "import re,sys; sys.exit(not re.search(r'Received status code (429|502|503)|Read timed out|Connection reset', open('android-validation.log').read()))"; then
+            if ! python3 -c "import re,sys; sys.exit(not re.search(r'(?:Received status code|HTTP response code:)\s*(429|502|503)|Read timed out|Connection reset', open('android-validation.log').read()))"; then
               exit 1
             fi
             if [ "$attempt" -eq 3 ]; then exit 1; fi

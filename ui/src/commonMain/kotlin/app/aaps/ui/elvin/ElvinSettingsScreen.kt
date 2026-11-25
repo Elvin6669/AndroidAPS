@@ -57,7 +57,7 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                         item(key = setting.key) {
                             val checked by preferences.observe(setting).collectAsState()
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text((setting.title as app.aaps.core.keys.interfaces.TextRef.Literal).text, Modifier.weight(1f))
+                                Text(setting.title.text, Modifier.weight(1f))
                                 Switch(checked = checked, onCheckedChange = {
                                     preferences.put(setting, it)
                                     scope.launch { monitor.tick() }
@@ -74,7 +74,7 @@ class ElvinSettingsScreen(private val monitor: ElvinMonitor) : ComposeScreenCont
                                 text = value
                                 value.toIntOrNull()?.takeIf { it in setting.min..setting.max }?.let { preferences.put(setting, it) }
                             }, modifier = Modifier.fillMaxWidth(), singleLine = true,
-                                label = { Text((setting.title as app.aaps.core.keys.interfaces.TextRef.Literal).text) },
+                                label = { Text(setting.title.text) },
                                 supportingText = { Text("${setting.min}–${setting.max}; valid edits save immediately") },
                                 isError = !valid, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                         }

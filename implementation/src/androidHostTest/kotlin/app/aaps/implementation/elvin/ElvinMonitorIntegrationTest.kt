@@ -7,7 +7,7 @@ import app.aaps.core.interfaces.db.PersistenceLayer
 import app.aaps.core.interfaces.elvin.*
 import app.aaps.core.interfaces.notifications.*
 import app.aaps.core.interfaces.plugin.ActivePlugin
-import app.aaps.core.interfaces.pump.Pump
+import app.aaps.core.interfaces.pump.PumpWithConcentration
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.keys.elvin.*
 import app.aaps.core.keys.interfaces.AppPlatform
@@ -23,11 +23,12 @@ class ElvinMonitorIntegrationTest {
     private class Platform : ElvinPlatform {
         override val supported = true
         val played = mutableListOf<ElvinChannel>()
+        var failStop = false
         override fun present(channel: ElvinChannel, text: String) = Unit
         override fun onSnooze(action: (ElvinChannel) -> Unit) = Unit
         override fun status() = mapOf("test" to "allowlisted status")
         override fun play(channel: ElvinChannel, sound: AlarmSound, test: Boolean) { played.add(channel) }
-        override fun stop(channel: ElvinChannel) = Unit
+        override fun stop(channel: ElvinChannel) { if (failStop) error("test-only stop failure") }
         override fun dismiss(channel: ElvinChannel) = Unit
         override fun share(text: String) = Unit
         override fun openSettings(kind: String) = Unit
@@ -39,7 +40,7 @@ class ElvinMonitorIntegrationTest {
             whenever(it.platform).thenReturn(AppPlatform.Android)
         }
         val preferences = PreferencesImpl(FileKeyValueStore(), { mock() }, { mock() }, { mock() }, mock(), config, mock())
-        val pump = mock<Pump>().also {
+        val pump = mock<PumpWithConcentration>().also {
             whenever(it.isConfigured()).thenReturn(true)
             whenever(it.lastDataTime).thenReturn(MutableStateFlow(1_000_000L))
             whenever(it.elvinCommunicationContext).thenReturn(ElvinPumpContext())
@@ -94,6 +95,14 @@ class ElvinMonitorIntegrationTest {
         val monitor = f.monitor()
         monitor.tick()
         assertTrue(monitor.diagnostics.value.contains("official AAPS alarms remain unchanged"))
+    }
+    @Test fun `even a failed custom cleanup cannot block official alarm processing`() = runTest {
+        val f = Fixture(); f.setup(); f.platform.failStop = true
+        whenever(f.persistence.getLastGlucoseValue()).thenThrow(IllegalStateException("test-only private failure details"))
+        val monitor = f.monitor()
+        monitor.tick()
+        assertTrue(monitor.diagnostics.value.contains("official AAPS alarms remain unchanged"))
+        assertFalse(monitor.diagnostics.value.contains("private failure details"))
     }
     @Test fun `official audible alarm takes priority over custom playback`() = runTest {
         val f = Fixture(); f.setup()

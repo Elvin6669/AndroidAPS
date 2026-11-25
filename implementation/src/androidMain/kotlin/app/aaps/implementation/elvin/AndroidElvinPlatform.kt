@@ -26,6 +26,7 @@ import androidx.core.content.ContextCompat
 import app.aaps.core.keys.elvin.*
 import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.ui.rawRes
+import app.aaps.implementation.androidNotification.AlarmNotificationManager
 import dev.zacsweers.metro.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -40,7 +41,8 @@ class AndroidElvinPlatform(
     private val notifications: AapsNotifications,
     private val appScope: CoroutineScope,
     private val icons: IconsProvider,
-    private val holder: () -> NotificationHolder
+    private val holder: () -> NotificationHolder,
+    private val officialAlarms: () -> AlarmNotificationManager
 ) : ElvinPlatform {
     override val supported = true
     private val handler by lazy { Handler(Looper.getMainLooper()) }
@@ -92,6 +94,7 @@ class AndroidElvinPlatform(
     }
 
     private fun granted(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    private fun officialAudioActive() = notifications.notifications.value.any { it.sound != null } || officialAlarms().unansweredAlarmIntent() != null
     override fun status(): Map<String, String> {
         val btPermission = granted(Manifest.permission.BLUETOOTH_CONNECT) && granted(Manifest.permission.BLUETOOTH_SCAN)
         val bluetooth = if (!btPermission) "unknown (Nearby devices permission missing)" else runCatching {
@@ -118,7 +121,7 @@ class AndroidElvinPlatform(
         handler.post {
             ensureObservers()
             if (!preferences.get(ElvinBooleanKey.Enabled)) { stopNow(channel); return@post }
-            if (notifications.notifications.value.any { it.sound != null }) {
+            if (officialAudioActive()) {
                 stopNow(channel)
                 audioStatus[channel.name] = "deferred to official audible safety alarm"
                 return@post
@@ -137,6 +140,8 @@ class AndroidElvinPlatform(
             val alarmStream = preferences.get(ElvinBooleanKey.SilentOverride) || (dnd && dndOverride)
             try {
                 val player = MediaPlayer()
+                // Own it before any fallible setup so the failure path always releases it.
+                players[channel] = player
                 player.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
                 player.setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(if (alarmStream) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION)
@@ -152,11 +157,13 @@ class AndroidElvinPlatform(
                 val escalate = preferences.get(ElvinBooleanKey.Escalate)
                 val gain = CommunicationAlarmPolicy.volume(start, maximum, 0, duration, escalate)
                 player.setVolume(gain, gain)
-                players[channel] = player
                 if (test) previews.add(channel)
                 val ramp = object : Runnable {
                     override fun run() {
                         if (players[channel] !== player) return
+                        if (officialAudioActive()) {
+                            stopNow(channel); audioStatus[channel.name] = "deferred to official audible safety alarm"; return
+                        }
                         // Permission/DND changes take effect during an already-playing alarm.
                         val dndNow = nm.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_ALL
                         if (!preferences.get(ElvinBooleanKey.Enabled) || (dndNow &&
@@ -165,7 +172,9 @@ class AndroidElvinPlatform(
                         }
                         val elapsed = SystemClock.elapsedRealtime() - started
                         if (test && elapsed >= 30_000L) { stopNow(channel); return }
-                        val volume = CommunicationAlarmPolicy.volume(start, maximum, elapsed, duration, escalate)
+                        val volume = CommunicationAlarmPolicy.volume(
+                            preferences.get(ElvinIntKey.StartVolume), preferences.get(ElvinIntKey.MaxVolume), elapsed,
+                            preferences.get(ElvinIntKey.EscalationMinutes), preferences.get(ElvinBooleanKey.Escalate))
                         runCatching { player.setVolume(volume, volume) }
                         handler.postDelayed(this, 1_000)
                     }
@@ -173,7 +182,7 @@ class AndroidElvinPlatform(
                 ramps[channel] = ramp
                 player.setOnPreparedListener {
                     if (players[channel] === it) {
-                        if (notifications.notifications.value.any { notification -> notification.sound != null }) {
+                        if (officialAudioActive()) {
                             stopNow(channel); return@setOnPreparedListener
                         }
                         it.start(); handler.post(ramp); vibrate()
@@ -202,7 +211,8 @@ class AndroidElvinPlatform(
         previews.remove(channel)
         ramps.remove(channel)?.let(handler::removeCallbacks)
         players.remove(channel)?.let { player -> runCatching { player.stop() }; player.release() }
-        if (players.isEmpty()) runCatching { vibrator.cancel() }
+        // The short custom waveform ends by itself. Do not call the UID-wide vibrator.cancel():
+        // another AAPS safety alarm can own vibration at the same time.
     }
     override fun onSnooze(action: (ElvinChannel) -> Unit) { snoozeAction = action }
     override fun present(channel: ElvinChannel, text: String) {

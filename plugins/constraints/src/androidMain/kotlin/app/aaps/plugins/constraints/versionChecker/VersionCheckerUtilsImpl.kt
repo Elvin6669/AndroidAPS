@@ -165,12 +165,16 @@ class VersionCheckerUtilsImpl(
 
     private fun onExpireDateDetected(currentVersion: String, endDate: Long) {
         val now = dateUtil.now()
+        val elvinEnabled = preferences.get(app.aaps.core.keys.elvin.ElvinBooleanKey.Enabled)
+        // Upstream reads the routine timestamp but writes LastExpiredWarning in the upcoming
+        // expiry branch. EI's independent routine reminder must not turn that into repeated spam.
+        val upcomingWarning = preferences.get(if (elvinEnabled) VersionCheckerLongKey.LastExpiredWarning else VersionCheckerLongKey.LastVersionCheckWarning)
         if (dateUtil.now() > endDate && shouldWarnAgain()) {
             // store last notification time
             preferences.put(VersionCheckerLongKey.LastVersionCheckWarning, now)
             //notify
             notificationManager.post(NotificationId.VERSION_EXPIRE, ConstraintsStrings.application_expired)
-        } else if (dateUtil.isAfterNoon() && now > preferences.get(VersionCheckerLongKey.LastVersionCheckWarning) + warnEvery(endDate)) {
+        } else if ((!elvinEnabled || now <= endDate) && dateUtil.isAfterNoon() && now > upcomingWarning + warnEvery(endDate)) {
             aapsLogger.debug(LTag.CORE, rh.gs(ConstraintsStrings.version_expire, currentVersion, dateUtil.dateString(endDate)))
             notificationManager.post(NotificationId.VERSION_EXPIRE, ConstraintsStrings.version_expire.withArgs(currentVersion,dateUtil.dateString(endDate)), level = NotificationLevel.LOW)
             preferences.put(VersionCheckerLongKey.LastExpiredWarning, now)

@@ -12,13 +12,18 @@ the exact current version name. It parses the local calendar date, adds one day,
 `LongComposedKey.AppExpiration`. Expiration warnings use a separate path: seven-day intervals when
 more than 28 days remain, three-day intervals when more than 14 days remain, otherwise daily.
 `VersionCheckerPlugin.applyMaxIOBConstraints` invokes the checker and sets maximum IOB to zero
-after a nonzero recorded expiration. EI does not change this code, date, lookup key, warning path,
-version definition or constraint.
+after a nonzero recorded expiration. EI does not change the expiration date, lookup key,
+version definition or maximum-IOB constraint.
 
 EI changes only the ordinary newer-version reminder while the EI master switch is on: 1–30-day
 frequency, separately stored last reminder, and a user-selected 1–30-day routine snooze. It still
 returns “new version detected” to the upstream caller, so expiration handling continues. No routine
-snooze suppresses expiration warnings. The page displays the current recorded expiration date.
+snooze suppresses expiration warnings. Upstream's upcoming-expiry branch reads the routine warning
+timestamp but writes `LastExpiredWarning`. With EI enabled, this branch reads its own existing
+`LastExpiredWarning` timestamp, preserving the intended 7/3/1-day cadence independently of routine
+reminders; it does not emit an “upcoming” notice after expiration. The expired critical warning path
+and IOB restriction remain active. With EI disabled the original warning path is retained.
+The page displays the current recorded expiration date.
 An unknown date is explicitly unknown, not a promise that this version never expires.
 
 The allowed-versions definition does not provide a trustworthy optional-versus-safety-critical flag

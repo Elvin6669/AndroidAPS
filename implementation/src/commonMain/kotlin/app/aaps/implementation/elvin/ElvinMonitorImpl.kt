@@ -74,9 +74,9 @@ class ElvinMonitorImpl(
         // This hook must never prevent the existing AAPS alarm/maintenance path from running.
         try { tickMutex.withLock { evaluate() } }
         catch (e: CancellationException) { throw e }
-        catch (_: Exception) {
-            ElvinChannel.entries.forEach { platform.stop(it) }
-            output.value = "Custom monitor failed; official AAPS alarms remain unchanged. Check standard AAPS logs."
+        catch (e: Exception) {
+            ElvinChannel.entries.forEach { runCatching { platform.stop(it) } }
+            output.value = "Custom monitor failed (${e::class.simpleName}); official AAPS alarms remain unchanged. No exception contents are exported."
         }
     }
 

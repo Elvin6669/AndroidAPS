@@ -19,6 +19,9 @@ Recovery notification, vibration, silent-mode alarm stream, DND request and volu
 shared custom audio options. Silent/DND overrides default OFF. Sound choices reuse four
 bundled AAPS resources. The test buttons preview for at most 30 seconds; Stop custom audio
 and the existing global alarm mute stop custom playback. Official audible alarms take priority.
+The audio loops until stopped/recovered/snoozed. Repeat occurrences refresh notification/vibration
+without resetting the escalation. Playback holds a MediaPlayer partial wake lock; this does not
+make the background check itself exact. Custom cleanup never calls the app-wide vibration cancel.
 
 Volume percentages are MediaPlayer gain relative to the user's Android stream volume, not an
 absolute sound-pressure level or a forced system volume. A 100% custom cap cannot make a muted
@@ -101,8 +104,9 @@ when imported preferences contain out-of-range numbers. Reset does not clear the
 9. `ui/.../search/BuiltInSearchables.kt`: inject the custom screen provider.
 10. `ui/.../compose/preferences/AllPreferencesScreen.kt`: one navigation entry for Elvin Settings.
 11. `plugins/constraints/.../versionChecker/VersionCheckerUtilsImpl.kt`: opt-in routine availability
-    reminder frequency/snooze only. Expiration lookup, expiration warnings and max-IOB constraint
-    code remain unchanged. See UPDATE-AND-RESEARCH.md.
+    reminder frequency/snooze. While EI is enabled, upcoming expiry warnings read their own existing
+    timestamp rather than the routine timestamp. Expiration dates and the max-IOB constraint are
+    unchanged; with EI off the original warning path is retained. See UPDATE-AND-RESEARCH.md.
 12. `.github/workflows/aaps-ci.yml`: retain existing signing/Drive formats, update SDK installation.
     Separate `elvin-validation.yml` uses no signing secrets and never assembles/distributes APKs.
 13. `implementation/src/androidMain/AndroidManifest.xml`: declare notification-policy access for

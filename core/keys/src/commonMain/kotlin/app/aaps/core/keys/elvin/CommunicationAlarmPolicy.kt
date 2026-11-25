@@ -9,7 +9,8 @@ object CommunicationAlarmPolicy {
     )
     data class Observation(
         val now: Long, val lastSuccess: Long?, val intentionalDisconnect: Boolean = false,
-        val configured: Boolean = true, val suspended: Boolean = false, val terminalPodState: Boolean = false
+        val configured: Boolean = true, val suspended: Boolean = false, val terminalPodState: Boolean = false,
+        val failedAttemptConfirmed: Boolean? = null
     )
     enum class Event { NONE, ALARM, RECOVERY, CLEAR }
     data class Decision(val state: State, val event: Event, val reason: String)
@@ -22,7 +23,7 @@ object CommunicationAlarmPolicy {
         if (o.intentionalDisconnect || !o.configured || o.terminalPodState) {
             val reason = when {
                 o.intentionalDisconnect -> "Intentional AAPS pump disconnection"
-                o.terminalPodState -> "Pod terminal/expired state; existing pump safety alarms remain active"
+                o.terminalPodState -> "Pod terminal (fault/deactivated) state; existing pump safety alarms remain active"
                 else -> "Pump not configured"
             }
             return Decision(State(watchStarted = started), Event.CLEAR, reason)
@@ -41,6 +42,8 @@ object CommunicationAlarmPolicy {
             return Decision(active, Event.NONE, "Waiting for custom repeat interval")
         val reason = if (success == null) "No reading/communication record since monitoring began"
             else if (o.suspended) "Communication stale; pump is also suspended (suspension does not suppress this alarm)"
+            else if (o.failedAttemptConfirmed == false) "Pump data stale; a failed status-read attempt is not confirmed"
+            else if (o.failedAttemptConfirmed == true) "Communication timeout after a failed status-read attempt"
             else "Communication timeout"
         return Decision(active.copy(lastAlarm = o.now), Event.ALARM, reason)
     }

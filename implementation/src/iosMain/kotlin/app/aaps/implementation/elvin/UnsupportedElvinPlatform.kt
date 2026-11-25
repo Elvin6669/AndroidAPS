@@ -9,9 +9,12 @@ import dev.zacsweers.metro.*
 @Inject
 class UnsupportedElvinPlatform : ElvinPlatform {
     override val supported = false
+    override fun present(channel: ElvinChannel, text: String) = Unit
+    override fun onSnooze(action: (ElvinChannel) -> Unit) = Unit
     override fun status() = mapOf("Custom communication monitor" to "Android phone only in EI.1")
     override fun play(channel: ElvinChannel, sound: AlarmSound, test: Boolean) = Unit
     override fun stop(channel: ElvinChannel) = Unit
+    override fun dismiss(channel: ElvinChannel) = Unit
     override fun share(text: String) = Unit
     override fun openSettings(kind: String) = Unit
 }

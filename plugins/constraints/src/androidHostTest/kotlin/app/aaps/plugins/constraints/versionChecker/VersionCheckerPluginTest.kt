@@ -38,4 +38,14 @@ class VersionCheckerPluginTest : TestBaseWithProfile() {
         val c3 = ConstraintObject(Double.MAX_VALUE, aapsLogger)
         assertThat(versionCheckerPlugin.applyMaxIOBConstraints(c3).value()).isEqualTo(0.0)
     }
+
+    @Test
+    fun `Elvin enabled and routine reminder snoozed cannot bypass expiration constraint`() = runTest {
+        whenever(preferences.get(app.aaps.core.keys.elvin.ElvinBooleanKey.Enabled)).thenReturn(true)
+        whenever(preferences.get(app.aaps.core.keys.elvin.ElvinUpdateLongKey.SnoozedUntil)).thenReturn(Long.MAX_VALUE)
+        whenever(preferences.get(LongComposedKey.AppExpiration, config.VERSION_NAME)).thenReturn(now - 1000)
+        val plugin = VersionCheckerPlugin(aapsLogger, generatedTextResolver("constraints" to ConstraintsStringsValues::textOf),
+            preferences, versionCheckerUtils, config, dateUtil, mock())
+        assertThat(plugin.applyMaxIOBConstraints(ConstraintObject(Double.MAX_VALUE, aapsLogger)).value()).isEqualTo(0.0)
+    }
 }

@@ -13,6 +13,7 @@ interface ElvinMonitor {
     fun test(channel: ElvinChannel)
     fun stopTest()
     fun reset()
+    fun snoozeRoutineUpdate()
     fun exportDiagnostics()
     fun openPermissionSettings(kind: String)
 }

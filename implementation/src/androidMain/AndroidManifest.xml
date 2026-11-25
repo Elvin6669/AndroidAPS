@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Elvin's opt-in DND controls can open Android's policy-access grant screen.
+         This declaration does not grant access or change the user's DND profile. -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <!-- AlarmNotificationManager wakes the screen for background alarms with setAlarmClock(), which
          needs this from targetSdk 31 on unless AAPS is excluded from battery optimization. Declared
          here, in the module that makes the call: it used to reach the app only through :pump:eopatch,

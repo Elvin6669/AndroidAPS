@@ -198,7 +198,8 @@ class CommonNotificationManager(
     override fun muteAllAlarms() = lock.withLock {
         app.aaps.core.interfaces.elvin.ElvinTelemetry.muteCustomAudio()
         val current = _notifications.value
-        val audible = current.filter { it.level == NotificationLevel.URGENT && it.sound != null }
+        val audible = current.filter { (it.level == NotificationLevel.URGENT && it.sound != null) ||
+            it.id == NotificationId.ELVIN_PUMP_LOSS || it.id == NotificationId.ELVIN_CGM_LOSS }
         if (audible.isNotEmpty()) {
             audible.forEach { cancelSystemNotification(it) }
             _notifications.value = current - audible.toSet()

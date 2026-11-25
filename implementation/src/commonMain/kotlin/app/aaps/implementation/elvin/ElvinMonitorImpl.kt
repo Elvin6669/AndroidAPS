@@ -45,6 +45,7 @@ class ElvinMonitorImpl(
 
     init {
         preferences.registerPreferences(ElvinKeys.all)
+        platform.onSnooze(::snooze)
         // Malformed or future-schema runtime data is ignored, never used as imported alarm state.
         runCatching {
             val json = Json.parseToJsonElement(preferences.get(ElvinRuntimeKey.State)).jsonObject
@@ -88,7 +89,7 @@ class ElvinMonitorImpl(
         val lastCgm = if (enabled) persistence.getLastGlucoseValue()?.timestamp else null
         val status = platform.status()
         stateLock.withLock {
-        // A reset/disable may have happened while persistence or running-mode lookup suspended.
+            // A reset/disable may have happened while persistence or running-mode lookup suspended.
             val enabledNow = enabled && preferences.get(ElvinBooleanKey.Enabled)
             val summary = mutableListOf("Elvin 4.0.0-EI.1; enabled=$enabled", "Worker sample: $now; previous=$lastTick; gap(ms)=${if (lastTick > 0) now - lastTick else 0}")
             if (enabled) record("Background monitor sample")
@@ -103,7 +104,10 @@ class ElvinMonitorImpl(
                     intentionalDisconnect = pumpChannel && disconnected,
                     configured = !pumpChannel || pump?.isConfigured() == true,
                     suspended = pumpChannel && pump?.isSuspended() == true,
-                    terminalPodState = pumpChannel && pump?.elvinCommunicationContext?.terminal == true))
+                    terminalPodState = pumpChannel && pump?.elvinCommunicationContext?.terminal == true,
+                    failedAttemptConfirmed = if (pumpChannel) ElvinTelemetry.pump.value.let {
+                        it.consecutiveFailures > 0 && it.lastAttempt > (lastPump ?: 0L)
+                    } else null))
                 states[channel] = decision.state
                 summary.add("$channel: last successful timestamp=${last ?: "none"}; age(ms)=${last?.let { now - it } ?: "unknown"}; ${decision.reason}")
                 when (decision.event) {
@@ -111,6 +115,7 @@ class ElvinMonitorImpl(
                         record("$channel alarm: ${decision.reason}")
                         notifications.post(id(channel), TextRef.Literal("Elvin $channel: ${decision.reason}"), actions = listOf(
                             NotificationAction(TextRef.Literal("Snooze custom alarm")) { snooze(channel) }))
+                        platform.present(channel, "Elvin $channel: ${decision.reason}")
                         // Standard audible safety alarms always take priority over custom playback.
                         if (notifications.notifications.value.any { it.sound != null }) {
                             platform.stop(channel)
@@ -118,13 +123,13 @@ class ElvinMonitorImpl(
                         } else platform.play(channel, sound(channel))
                     }
                     Policy.Event.RECOVERY -> {
-                        platform.stop(channel)
+                        platform.dismiss(channel)
                         notifications.dismiss(id(channel))
                         record("$channel recovered")
                         if (preferences.get(ElvinBooleanKey.Recovery)) notifications.post(NotificationId.ELVIN_RECOVERY,
                             TextRef.Literal("Elvin $channel communication recovered"), validMinutes = 5)
                     }
-                    Policy.Event.CLEAR -> { platform.stop(channel); notifications.dismiss(id(channel)) }
+                    Policy.Event.CLEAR -> { platform.dismiss(channel); notifications.dismiss(id(channel)) }
                     Policy.Event.NONE -> if (decision.reason == "Custom alarm snoozed") platform.stop(channel)
                 }
             }
@@ -155,7 +160,7 @@ class ElvinMonitorImpl(
     override fun snooze(channel: ElvinChannel) = stateLock.withLock {
         states[channel] = Policy.snooze(states[channel] ?: Policy.State(), date.now(),
             int(if (channel == ElvinChannel.PUMP) ElvinIntKey.PumpSnooze else ElvinIntKey.CgmSnooze))
-        platform.stop(channel)
+        platform.dismiss(channel)
         notifications.dismiss(id(channel))
         record("$channel custom alarm snoozed; official alarms unaffected")
         persist()
@@ -171,9 +176,15 @@ class ElvinMonitorImpl(
         preferences.remove(ElvinRuntimeKey.State)
         ElvinUpdateLongKey.entries.forEach(preferences::remove)
         states.clear(); events.clear()
-        ElvinChannel.entries.forEach { notifications.dismiss(id(it)) }
+        ElvinChannel.entries.forEach { platform.dismiss(it); notifications.dismiss(id(it)) }
         output.value = "Elvin settings reset. Custom monitoring is disabled. Standard AAPS settings were not changed."
     }
     override fun exportDiagnostics() = platform.share(output.value)
     override fun openPermissionSettings(kind: String) = platform.openSettings(kind)
+    override fun snoozeRoutineUpdate() {
+        if (!preferences.get(ElvinBooleanKey.Enabled)) return
+        preferences.put(ElvinUpdateLongKey.SnoozedUntil, date.now() + int(ElvinIntKey.UpdateSnoozeDays) * 86_400_000L)
+        notifications.dismiss(NotificationId.NEW_VERSION_DETECTED)
+        // Never dismiss VERSION_EXPIRE or modify AppExpiration / max-IOB constraints.
+    }
 }

@@ -12,6 +12,30 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 
 class ElvinSettingsPersistenceTest {
+    @Test fun `standard restore applies custom settings but rejects device runtime and snoozes`() = kotlinx.coroutines.test.runTest {
+        val store = FileKeyValueStore()
+        val prefs = preferences(store)
+        val config = mock<Config>()
+        whenever(config.APS).thenReturn(true)
+        whenever(config.platform).thenReturn(AppPlatform.Android)
+        val active = mock<app.aaps.core.interfaces.plugin.ActivePlugin>()
+        whenever(active.getPluginsList()).thenReturn(emptyList())
+        prefs.put(BooleanKey.AlertMissedBgReading, true)
+        val applier = app.aaps.implementation.maintenance.PreferenceImportApplier(
+            store, prefs, app.aaps.implementation.sharedPreferences.PreferenceKeyResolverFactory(prefs, active),
+            config, mock(), mock(), app.aaps.implementation.maintenance.migration.PreferenceMigrations(mock(), config, mock(), mock(), mock()))
+        val result = applier.apply(app.aaps.core.interfaces.maintenance.Prefs(mapOf(
+            ElvinBooleanKey.PumpDndOverride.key to "true", ElvinIntKey.CgmTimeout.key to "17",
+            ElvinRuntimeKey.State.key to "untrusted runtime", ElvinUpdateLongKey.SnoozedUntil.key to "12345",
+            ElvinMaintenanceLongKey.LastBackup.key to "12345"), emptyMap()), true)
+        assertTrue(prefs.get(ElvinBooleanKey.PumpDndOverride))
+        assertEquals(17, prefs.get(ElvinIntKey.CgmTimeout))
+        assertEquals("", prefs.get(ElvinRuntimeKey.State))
+        assertEquals(0L, prefs.get(ElvinUpdateLongKey.SnoozedUntil))
+        assertEquals(0L, prefs.get(ElvinMaintenanceLongKey.LastBackup))
+        assertEquals(3, result.notExportable)
+        assertTrue(prefs.get(BooleanKey.AlertMissedBgReading))
+    }
     @Test fun `independent audio profiles inherit legacy settings but explicit channel settings win`() {
         val prefs = preferences(FileKeyValueStore())
         prefs.put(ElvinBooleanKey.SilentOverride, true)

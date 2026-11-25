@@ -91,6 +91,11 @@ SMB/basal scenarios. No historical patient data was retrieved or fabricated for 
 ## Signing and delivery
 
 Existing GitHub secrets and their formats are preserved. The no-APK validation workflow never
-reads signing or Drive secrets. Actual APK signing and Drive token refresh remain unvalidated
-until an explicitly authorised build. Certificate matching with the installed phone remains unresolved;
-no signing key has been generated, replaced or exported and no phone was accessed.
+reads signing or Drive secrets. A separate no-APK preflight signed and verified a disposable JAR
+using the existing key. Its certificate is not Android Debug, is valid until 1 April 2046, and has
+SHA-256 fingerprint `D5:C3:03:82:2D:B9:1F:FC:52:94:12:7B:F0:04:76:6B:D3:84:7D:DC:6A:17:93:9B:1B:61:4C:12:A2:11:0B:8F`.
+Certificate matching with the installed phone remains unresolved; no phone was accessed.
+The read-only Drive preflight failed at OAuth refresh: HTTP 400 `invalid_grant`. The stored
+refresh credential needs reauthorisation before automatic Drive APK delivery can work. GitHub
+artifact delivery remains configured. In-app backup provider credentials are separate.
+No signing key or repository secret was regenerated or changed. No APK was assembled or installed.

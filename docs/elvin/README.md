@@ -1,4 +1,4 @@
-# Elvin development — 4.0.0-EI.1
+# Elvin development — 4.0.0-EI.2
 
 Base: official tag `4.0.0`, commit `f77abd9b82b308e8fc330da0d7a31370fb4a0f49`.
 All EI development belongs on `custom-aaps`. `master` remains the exact official source;
@@ -10,13 +10,13 @@ Open **Settings → Elvin Settings**. The master switch is OFF on a fresh instal
 Custom monitoring is additive: it never disables, snoozes, resets, or dismisses official
 pump/CGM alarms. The only IDs it dismisses are its own. Reset removes only registered EI keys.
 The underlying official version name/code remain 4.0.0/1500, preserving expiration-key lookup.
-EI.1 identification is displayed on the custom page rather than appended to the safety version key.
+EI.2 identification is displayed on the custom page rather than appended to the safety version key.
 
 Suggested editable defaults: pump 10 minutes, CGM 15 minutes, separate 5-minute repeats and
 snoozes, 30% starting/100% maximum gain, 10-minute escalation. Thresholds accept 10–300 minutes.
 Pump and CGM each have an enable switch, threshold, repeat interval, snooze duration and sound.
 Recovery notification, vibration, silent-mode alarm stream, DND request and volume ramp are
-shared custom audio options. Silent/DND overrides default OFF. Sound choices reuse four
+independent for each channel. Silent/DND overrides default OFF. Sound choices reuse four
 bundled AAPS resources. The test buttons preview for at most 30 seconds; Stop custom audio
 and the existing global alarm mute stop custom playback. Official audible alarms take priority.
 The audio loops until stopped/recovered/snoozed. Repeat occurrences refresh notification/vibration
@@ -49,12 +49,13 @@ diagnostics refresh. No new pump command, connection retry or insulin-delivery o
   sampling, not exact deadlines. Doze, screen-off restrictions, force-stop, reboot and vendor
   battery controls need physical testing. No exact-alarm or foreground-service timing claim is made.
 * A process cannot report its own total failure while it is dead. Independent app-health monitoring
-  requires an external observer/phone/watch/Nightscout service; EI.1 does not pretend otherwise.
-* Diagnostics history is bounded to 100 allowlisted events in the current process. Worker history
+  requires an external observer/phone/watch/Nightscout service; EI does not pretend otherwise.
+* Diagnostics history is bounded to 100 allowlisted events, persisted locally across process restart. Worker history
   means monitor samples, not the complete WorkManager database. Pump attempt counters cover
   `CommandReadStatus`, not every BLE transaction. Nightscout counters cover V3 upload responses
   and exceptions; they do not cover the legacy client or mean an entire sync queue completed.
-  A zero timestamp means no observation in this process, not a successful upload.
+  A zero timestamp means no observation, not a successful upload. The maintenance adapter persists
+  allowlisted V3 upload timestamps/failure counts; raw diagnostics distinguish process counters.
 
 Diagnostic export shares only the constructed report: timestamps, durations, booleans, status
 labels, counts, suppression reasons and the bounded history. It never exports general AAPS logs,
@@ -65,9 +66,11 @@ tokens, credentials or authentication headers. The Android share chooser is user
 
 The `elvin_` namespace is registered in PreferencesImpl at construction, before screen or monitor
 creation. Ordinary settings are included by the existing encrypted AAPS export/import system.
-Runtime watch state and routine-reminder snoozes are non-exportable, so another device cannot
+Runtime watch/history state, backup scheduler timestamps, upload counters and routine-reminder snoozes are non-exportable, so another device cannot
 inherit a snooze. Schema 1 is a new namespace with absent-key defaults; old AAPS keys are not
-migrated or overwritten. Malformed runtime JSON is discarded. Monitor inputs are clamped even
+migrated or overwritten. Absent EI.2 channel audio keys inherit EI.1 shared values, including after
+restoring an EI.1 backup; explicit channel choices take precedence. Legacy shared keys remain
+exportable for compatibility but are hidden from the page. Malformed runtime JSON is discarded. Monitor inputs are clamped even
 when imported preferences contain out-of-range numbers. Reset does not clear the application store.
 
 ## Upstream mechanisms already present
@@ -75,13 +78,19 @@ when imported preferences contain out-of-range numbers. Reset does not clear the
 * Encrypted settings export/import: `implementation/.../maintenance/ImportExportPrefsImpl.kt`,
   `LocalImportExportPrefs.kt`, `PreferenceImportApplier.kt`, secure export-password storage and
   cloud storage providers. Automation's `ActionSettingsExport` supports scheduled unattended
-  export when the user enables it and configures a stored password. EI uses this, with no duplicate
-  backup scheduler or new credential store.
+  export when the user enables it and configures a stored password. EI.2 adds an opt-in interval
+  adapter over the same encryption, password cache and destinations. An enabled automatic
+  ActionSettingsExport event takes precedence to prevent competing schedules. Manual EI export
+  remains available. A failed attempt backs off 15 minutes; a partial destination success is reported
+  explicitly and uses the regular interval. There is no new credential store or plaintext fallback.
 * Profile history: `ui/.../compose/treatments/ProfileSwitchScreen.kt` and persisted profile/effective
   profile switches. Statistics already include TIR, AGP and TDD. EI does not create a competing
-  profile-history database. Offline research adds descriptive groups, not causal performance claims.
+  profile-history database. Elvin Settings exposes the latest 100 requested/effective records over
+  1–365 days, read-only. Offline research adds descriptive groups, not causal performance claims.
 * Nightscout: existing queue, upload retries/logs and status UI remain unchanged. EI adds numeric,
-  allowlisted V3 upload observations. It does not install a new upload-failure safety alarm.
+  allowlisted V3 upload observations and an opt-in silent warning for sustained failures/stalled queues.
+  Intentional pause/upload-disable and unconfigured V3 suppress this custom warning. It adds no
+  polling, queue mutations or retry policy and does not claim to observe legacy uploads.
 * Background health: existing KeepAlive scheduling, stalled-worker diagnostics and permission
   notifications remain active. EI exposes its own observations and permission snapshot.
 
@@ -94,7 +103,7 @@ when imported preferences contain out-of-range numbers. Reset does not clear the
 3. `core/interfaces/.../pump/Pump.kt`: read-only context with a default for all existing drivers.
 4. `pump/omnipod/dash/.../OmnipodDashPumpPlugin.kt`: read-only context getter. No command or delivery
    method changes.
-5. `core/interfaces/.../notifications/NotificationId.kt`: append three EI IDs, preserving prior ordinals.
+5. `core/interfaces/.../notifications/NotificationId.kt`: append five EI IDs, preserving prior ordinals.
 6. `implementation/.../notifications/CommonNotificationManager.kt`: signal custom audio on global mute;
    include custom IDs in dismissal while preserving the original official alarm selection/playback.
 7. `implementation/.../queue/commands/CommandReadStatus.kt`: timestamp/count observations around the
@@ -111,6 +120,13 @@ when imported preferences contain out-of-range numbers. Reset does not clear the
     Separate `elvin-validation.yml` uses no signing secrets and never assembles/distributes APKs.
 13. `implementation/src/androidMain/AndroidManifest.xml`: declare notification-policy access for
     the opt-in DND grant screen. Access is still granted only by the user in Android settings.
+14. `core/interfaces/.../maintenance/ImportExportPrefs.kt` and Android implementation: awaited
+    automatic export using existing encrypted format/destinations, independent of pending manual files.
+15. `core/interfaces/.../automation/AutomationEvent.kt` and `AutomationEventObject.kt`: read-only
+    settings-export metadata for duplicate-schedule avoidance; trigger/action execution unchanged.
+16. `core/interfaces/.../nsclient/NSClientRepository.kt` and V3 repository: read-only pause status.
+
+See [AUDIT.md](AUDIT.md) for every setting/default/range and remaining limitations.
 
 All new runtime, UI, keys, tests and research files live under `elvin` directories where possible.
 User-facing custom text is currently English; translations and global-search indexing remain future work.

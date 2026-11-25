@@ -48,13 +48,24 @@ jobs:
           cache-read-only: false
       - run: chmod +x gradlew
       - name: Compile and test changed Android modules without assembling APKs
-        run: >-
-          ./gradlew :implementation:testAndroidHostTest :core:keys:testAndroidHostTest
-          :plugins:constraints:testAndroidHostTest :ui:compileAndroidMain
-          :pump:omnipod:dash:compileDebugKotlin :app:compileFullDebugKotlin -PfirebaseDisable
-          --no-daemon --max-workers=3
-          -Dorg.gradle.jvmargs='-Xmx3g -Xss4m'
-          -Pkotlin.daemon.jvmargs=-Xmx4g
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew :implementation:testAndroidHostTest :core:keys:testAndroidHostTest \
+              :plugins:constraints:testAndroidHostTest :ui:compileAndroidMain \
+              :pump:omnipod:dash:compileDebugKotlin :app:compileFullDebugKotlin -PfirebaseDisable \
+              --no-daemon --continue --max-workers=3 \
+              -Dorg.gradle.jvmargs='-Xmx3g -Xss4m' -Pkotlin.daemon.jvmargs=-Xmx4g \
+              2>&1 | tee android-validation.log; then
+              exit 0
+            fi
+            # Retry transient dependency failures only; source/test failures remain failures.
+            if ! python3 -c "import re,sys; sys.exit(not re.search(r'Received status code (429|502|503)|Read timed out|Connection reset', open('android-validation.log').read()))"; then
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep "$((attempt * 20))"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:

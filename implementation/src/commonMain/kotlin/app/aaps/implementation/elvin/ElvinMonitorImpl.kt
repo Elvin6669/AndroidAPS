@@ -84,6 +84,9 @@ class ElvinMonitorImpl(
         val now = date.now()
         val enabled = preferences.get(ElvinBooleanKey.Enabled) && platform.supported && config.APS
         val pump = if (enabled) activePlugin().activePump else null
+        // The concentration wrapper implements Pump's default context. Read the selected driver's
+        // diagnostic getter explicitly; do not alter the concentration/delivery wrapper.
+        val pumpContext = pump?.selectedActivePump()?.elvinCommunicationContext
         val disconnected = enabled && loop().runningMode() == RM.Mode.DISCONNECTED_PUMP
         val lastPump = pump?.lastDataTime?.value?.takeIf { it > 0 }
         val lastCgm = if (enabled) persistence.getLastGlucoseValue()?.timestamp else null
@@ -104,7 +107,7 @@ class ElvinMonitorImpl(
                     intentionalDisconnect = pumpChannel && disconnected,
                     configured = !pumpChannel || pump?.isConfigured() == true,
                     suspended = pumpChannel && pump?.isSuspended() == true,
-                    terminalPodState = pumpChannel && pump?.elvinCommunicationContext?.terminal == true,
+                    terminalPodState = pumpChannel && pumpContext?.terminal == true,
                     failedAttemptConfirmed = if (pumpChannel) ElvinTelemetry.pump.value.let {
                         it.consecutiveFailures > 0 && it.lastAttempt > (lastPump ?: 0L)
                     } else null))
@@ -134,7 +137,7 @@ class ElvinMonitorImpl(
                 }
             }
             summary.add("Pump suspended=${pump?.isSuspended() ?: "unknown"}; intentional disconnection=$disconnected")
-            summary.add("Pod state: ${pump?.elvinCommunicationContext?.description ?: "not sampled"}")
+            summary.add("Pod state: ${pumpContext?.description ?: "not sampled"}")
             summary.add("Pump status-read attempts (this process): ${ElvinTelemetry.pump.value}")
             summary.add("Nightscout V3 upload observations (this process): ${ElvinTelemetry.nightscout.value}")
             summary.addAll(status.map { "${it.key}: ${it.value}" })

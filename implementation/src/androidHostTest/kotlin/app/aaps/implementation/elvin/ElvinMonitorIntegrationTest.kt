@@ -44,6 +44,7 @@ class ElvinMonitorIntegrationTest {
             whenever(it.isConfigured()).thenReturn(true)
             whenever(it.lastDataTime).thenReturn(MutableStateFlow(1_000_000L))
             whenever(it.elvinCommunicationContext).thenReturn(ElvinPumpContext())
+            whenever(it.selectedActivePump()).thenReturn(it)
         }
         val active = mock<ActivePlugin>().also { whenever(it.activePump).thenReturn(pump) }
         val loop = mock<Loop>()
@@ -119,5 +120,17 @@ class ElvinMonitorIntegrationTest {
         assertTrue(f.preferences.get(ElvinUpdateLongKey.SnoozedUntil) > f.now)
         verify(f.notifications).dismiss(NotificationId.NEW_VERSION_DETECTED)
         verify(f.notifications, never()).dismiss(NotificationId.VERSION_EXPIRE)
+    }
+    @Test fun `selected driver terminal pod context is read through the concentration wrapper`() = runTest {
+        val f = Fixture(); f.setup()
+        f.preferences.put(ElvinBooleanKey.PumpEnabled, true)
+        f.preferences.put(ElvinBooleanKey.CgmEnabled, false)
+        whenever(f.pump.elvinCommunicationContext).thenReturn(ElvinPumpContext(true, "terminal pod"))
+        f.now += 1_800_000
+        val monitor = f.monitor(); monitor.tick()
+        assertTrue(f.platform.played.isEmpty())
+        assertTrue(monitor.diagnostics.value.contains("terminal pod"))
+        verify(f.pump).selectedActivePump()
+        verify(f.notifications, never()).dismiss(NotificationId.PUMP_UNREACHABLE)
     }
 }

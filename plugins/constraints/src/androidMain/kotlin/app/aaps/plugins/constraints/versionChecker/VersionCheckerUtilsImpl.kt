@@ -139,6 +139,21 @@ class VersionCheckerUtilsImpl(
     }
 
     private fun onNewVersionDetected(currentVersion: String, newVersion: String?): Boolean {
+        // EI changes only the informational availability reminder. Expiration handling and
+        // VersionCheckerPlugin.applyMaxIOBConstraints remain completely independent.
+        if (preferences.get(app.aaps.core.keys.elvin.ElvinBooleanKey.Enabled)) {
+            val now = dateUtil.now()
+            val interval = preferences.get(app.aaps.core.keys.elvin.ElvinIntKey.UpdateDays).coerceIn(1, 30) * T.days(1).msecs()
+            val last = preferences.get(app.aaps.core.keys.elvin.ElvinUpdateLongKey.LastRoutineReminder)
+            val snoozed = preferences.get(app.aaps.core.keys.elvin.ElvinUpdateLongKey.SnoozedUntil)
+            if (now >= snoozed && (last == 0L || now - last >= interval)) {
+                notificationManager.post(NotificationId.NEW_VERSION_DETECTED,
+                    app.aaps.core.keys.interfaces.TextRef.Literal("AAPS $newVersion available. Routine reminder; review official release notes for safety significance. Expiration restrictions remain active."),
+                    level = NotificationLevel.LOW)
+                preferences.put(app.aaps.core.keys.elvin.ElvinUpdateLongKey.LastRoutineReminder, now)
+            }
+            return true
+        }
         val now = dateUtil.now()
         if (dateUtil.isAfterNoon() && now > preferences.get(VersionCheckerLongKey.LastVersionCheckWarning) + warnEvery(0)) {
             aapsLogger.debug(LTag.CORE, "Version $currentVersion outdated. Found $newVersion")
